@@ -40,7 +40,7 @@ RUN mkdir -p /opt/llvm-mos \
     && curl -L --fail --retry 5 \
         "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/${LLVM_MOS_VERSION}/llvm-mos-linux.tar.xz" \
         -o /tmp/llvm-mos.tar.xz \
-    && tar -xJf /tmp/llvm-mos.tar.xz -C /opt/llvm-mos \
+    && tar -xJf /tmp/llvm-mos.tar.xz -C /opt/llvm-mos --strip-components=1 \
     && rm -f /tmp/llvm-mos.tar.xz
 
 RUN mkdir -p /opt/amiga \

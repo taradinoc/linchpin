@@ -57,8 +57,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mos_c128_clang="$(command -v mos-c128-clang || true)"
+          if [ -z "$mos_c128_clang" ]; then
+            mos_c128_clang="$(find /opt/llvm-mos -path '*/bin/mos-c128-clang' -type f | head -n 1)"
+          fi
+          if [ -z "$mos_c128_clang" ]; then
+            echo "mos-c128-clang not found in PATH or under /opt/llvm-mos" >&2
+            exit 1
+          fi
           make -C src/Linchpin128 c128 \
-            MOS_C128_CLANG=/opt/llvm-mos/bin/mos-c128-clang \
+            MOS_C128_CLANG="$mos_c128_clang" \
             C128_TARGET=bin/linchpin.prg \
             LAUNCHER_PRG=bin/boot.prg \
             LAUNCHER_NAME=boot \
