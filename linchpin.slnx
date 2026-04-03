@@ -2,11 +2,12 @@
   <Folder Name="/src/">
     <Project Path="src/Chisel/Chisel.csproj" />
     <Project Path="src/Linchpin/Linchpin.csproj" />
+    <Project Path="src/LP128Pack/LP128Pack.csproj" />
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/Linchpin.ToolTests/Linchpin.ToolTests.csproj" />
   </Folder>
-  <Folder Name="/test/linchpin.testcasetool/">
-    <Project Path="test/linchpin.testcasetool/Linchpin.TestCaseTool.csproj" />
+  <Folder Name="/test/Linchpin.TestCaseTool/">
+    <Project Path="test/Linchpin.TestCaseTool/Linchpin.TestCaseTool.csproj" />
   </Folder>
 </Solution>
