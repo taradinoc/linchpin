@@ -6,4 +6,7 @@
   <Folder Name="/test/">
     <Project Path="test/Linchpin.ToolTests/Linchpin.ToolTests.csproj" />
   </Folder>
+  <Folder Name="/test/linchpin.testcasetool/">
+    <Project Path="test/linchpin.testcasetool/Linchpin.TestCaseTool.csproj" />
+  </Folder>
 </Solution>
