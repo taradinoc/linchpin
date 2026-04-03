@@ -58,6 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           make -C src/Linchpin128 c128 \
+            MOS_C128_CLANG=/opt/llvm-mos/bin/mos-c128-clang \
             C128_TARGET=bin/linchpin.prg \
             LAUNCHER_PRG=bin/boot.prg \
             LAUNCHER_NAME=boot \
