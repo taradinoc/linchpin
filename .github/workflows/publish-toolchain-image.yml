@@ -1,0 +1,81 @@
+name: Publish Toolchain Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: Push the built image to GHCR
+        required: false
+        default: true
+        type: boolean
+      llvm_mos_version:
+        description: llvm-mos SDK version to bake into the image
+        required: false
+        default: v23.0.0
+        type: string
+      amiga_gcc_ref:
+        description: Git ref for AmigaPorts/m68k-amigaos-gcc
+        required: false
+        default: master
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-toolchain-image.yml
+      - docker/release-toolchain/Dockerfile
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-toolchain-image-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/linchpin-release-toolchain
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=main,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha,format=short
+
+      - name: Log in to GHCR
+        if: github.event_name != 'workflow_dispatch' || inputs.push_image
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and optionally push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/release-toolchain/Dockerfile
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push_image }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            LLVM_MOS_VERSION=${{ github.event.inputs.llvm_mos_version || 'v23.0.0' }}
+            AMIGA_GCC_REF=${{ github.event.inputs.amiga_gcc_ref || 'master' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -8,17 +8,21 @@ on:
 
 permissions:
   contents: write
+  packages: read
 
 env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-  LLVM_MOS_VERSION: v23.0.0
-  AMIGA_GCC_REF: master
 
 jobs:
   build-release:
     runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/linchpin-release-toolchain:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Check out repository
@@ -28,85 +32,6 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-
-      - name: Cache llvm-mos SDK
-        uses: actions/cache@v4
-        with:
-          path: ~/llvm-mos
-          key: llvm-mos-${{ runner.os }}-${{ env.LLVM_MOS_VERSION }}
-
-      - name: Cache Amiga toolchain
-        id: cache-amiga
-        uses: actions/cache@v4
-        with:
-          path: /opt/amiga
-          key: amiga-gcc-${{ runner.os }}-${{ env.AMIGA_GCC_REF }}-v1
-
-      - name: Install system dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository -y ppa:vriviere/ppa
-          sudo apt-get update
-          sudo apt-get install -y \
-            autoconf \
-            automake \
-            bison \
-            ca-certificates \
-            cross-mint-essential \
-            curl \
-            flex \
-            gcc \
-            g++ \
-            gettext \
-            git \
-            gperf \
-            libgmp-dev \
-            libmpc-dev \
-            libmpfr-dev \
-            libncurses-dev \
-            libreadline-dev \
-            lhasa \
-            make \
-            patch \
-            perl \
-            python3 \
-            rsync \
-            texinfo \
-            wget
-
-      - name: Install llvm-mos SDK
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ ! -x "$HOME/llvm-mos/bin/mos-c128-clang" ]; then
-            rm -rf "$HOME/llvm-mos"
-            mkdir -p "$HOME/llvm-mos"
-            curl -L --fail --retry 5 \
-              "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/${LLVM_MOS_VERSION}/llvm-mos-linux.tar.xz" \
-              -o /tmp/llvm-mos.tar.xz
-            tar -xJf /tmp/llvm-mos.tar.xz -C "$HOME/llvm-mos"
-          fi
-          echo "$HOME/llvm-mos/bin" >> "$GITHUB_PATH"
-
-      - name: Build Amiga toolchain
-        if: steps.cache-amiga.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo mkdir -p /opt/amiga
-          sudo chown "$USER":"$USER" /opt/amiga
-          rm -rf /tmp/m68k-amigaos-gcc
-          git clone https://github.com/AmigaPorts/m68k-amigaos-gcc.git /tmp/m68k-amigaos-gcc
-          make -C /tmp/m68k-amigaos-gcc update
-          make -C /tmp/m68k-amigaos-gcc -j"$(nproc)" PREFIX=/opt/amiga all
-
-      - name: Add Amiga toolchain to PATH
-        shell: bash
-        run: |
-          echo "/opt/amiga/bin" >> "$GITHUB_PATH"
 
       - name: Publish .NET tools
         shell: bash
