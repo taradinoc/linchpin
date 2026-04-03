@@ -46,12 +46,16 @@ jobs:
         run: |
           set -euo pipefail
           make -C src/LinchpinST atari-tos
+          mkdir -p artifacts/native/atari
+          cp src/LinchpinST/bin/LINCHST.TTP artifacts/native/atari/LINCHPIN.TTP
 
       - name: Build Amiga target
         shell: bash
         run: |
           set -euo pipefail
           make -C src/LinchpinST amiga
+          mkdir -p artifacts/native/amiga
+          cp src/LinchpinST/bin/CORNER artifacts/native/amiga/LINCHPIN
 
       - name: Build Commodore 128 target
         shell: bash
@@ -76,16 +80,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p artifacts/native/c128
+          cp src/Linchpin128/bin/boot.prg artifacts/native/c128/boot.prg
+          cp src/Linchpin128/bin/linchpin.prg artifacts/native/c128/linchpin.prg
           python3 scripts/package_release.py \
             --output-dir artifacts/release \
             --zip-name "linchpin-${GITHUB_REF_NAME:-${GITHUB_RUN_NUMBER}}.zip" \
             --bin-input artifacts/publish/Linchpin \
             --bin-input artifacts/publish/Chisel \
             --bin-input artifacts/publish/C128Pack \
-            --atari-binary src/LinchpinST/bin/LINCHST.TTP \
-            --amiga-binary src/LinchpinST/bin/CORNER \
-            --c128-boot src/Linchpin128/bin/boot.prg \
-            --c128-program src/Linchpin128/bin/linchpin.prg \
+            --atari-binary artifacts/native/atari/LINCHPIN.TTP \
+            --amiga-binary artifacts/native/amiga/LINCHPIN \
+            --c128-boot artifacts/native/c128/boot.prg \
+            --c128-program artifacts/native/c128/linchpin.prg \
             --sample-dir src/Chisel/examples \
             --license-file LICENSE
 
