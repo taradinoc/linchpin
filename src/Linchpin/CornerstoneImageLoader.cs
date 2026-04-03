@@ -416,7 +416,7 @@ internal enum LinchpinCommand
 }
 
 /// <summary>
-/// Locates the repository root by searching upward for <c>cornerstone.sln</c>.
+/// Locates the repository root by searching upward for <c>linchpin.slnx</c>.
 /// </summary>
 internal static class RepositoryLocator
 {
@@ -427,7 +427,7 @@ internal static class RepositoryLocator
 			string? current = Path.GetFullPath(candidate);
 			while (!string.IsNullOrEmpty(current))
 			{
-				if (File.Exists(Path.Combine(current, "cornerstone.sln")))
+				if (File.Exists(Path.Combine(current, "linchpin.slnx")))
 				{
 					return current;
 				}
@@ -436,7 +436,7 @@ internal static class RepositoryLocator
 			}
 		}
 
-		throw new LinchpinException("Could not locate the repository root containing cornerstone.sln.");
+		throw new LinchpinException("Could not locate the repository root containing linchpin.slnx.");
 	}
 
 	private static IEnumerable<string> GetSearchRoots()

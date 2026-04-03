@@ -1,0 +1,191 @@
+{
+  "cases": [
+    {
+      "name": "aggregate-functions",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "DB/FUNK",
+      "inputText": "view aggregate\r",
+      "expectedInstructionCount": 500000,
+      "instructionLimit": 500000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/aggregate-functions.screen.txt"
+    },
+    {
+      "name": "cornerstone-conformance",
+      "mmePath": null,
+      "objPath": null,
+      "chiselSourcePath": "test/Linchpin.ToolTests/TestData/runtime/cornerstone-conformance.cas",
+      "dataDirectoryPath": null,
+      "inputText": "ax",
+      "expectedInstructionCount": 1774,
+      "instructionLimit": 2000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/cornerstone-conformance.screen.txt"
+    },
+    {
+      "name": "cs-exit",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "Cornerstone",
+      "inputText": "exit\r",
+      "expectedInstructionCount": 46372,
+      "instructionLimit": 60000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/cs-exit.screen.txt"
+    },
+    {
+      "name": "cs-view-customer",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "Cornerstone",
+      "inputText": "view customer\r",
+      "expectedInstructionCount": 200000,
+      "instructionLimit": 200000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/cs-view-customer.screen.txt"
+    },
+    {
+      "name": "cs-view-customer-detail",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "Cornerstone",
+      "inputText": "view customer\rdetailed\r",
+      "expectedInstructionCount": 500000,
+      "instructionLimit": 500000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/cs-view-customer-detail.screen.txt"
+    },
+    {
+      "name": "date-functions",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "DB/FUNK",
+      "inputText": "view date\r",
+      "expectedInstructionCount": 500000,
+      "instructionLimit": 500000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/date-functions.screen.txt"
+    },
+    {
+      "name": "date-time-system-slots",
+      "mmePath": null,
+      "objPath": null,
+      "chiselSourcePath": "test/Linchpin.ToolTests/TestData/runtime/date-time-system-slots.cas",
+      "dataDirectoryPath": null,
+      "inputText": "",
+      "expectedInstructionCount": 59,
+      "instructionLimit": 200,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/date-time-system-slots.screen.txt"
+    },
+    {
+      "name": "financial-functions",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "DB/FUNK",
+      "inputText": "view financial\r",
+      "expectedInstructionCount": 500000,
+      "instructionLimit": 500000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/financial-functions.screen.txt"
+    },
+    {
+      "name": "greet-by-name",
+      "mmePath": null,
+      "objPath": null,
+      "chiselSourcePath": "src/Chisel/examples/greet-by-name.cas",
+      "dataDirectoryPath": null,
+      "inputText": "Taylor\r\r",
+      "expectedInstructionCount": 779,
+      "instructionLimit": 1000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/greet-by-name.screen.txt"
+    },
+    {
+      "name": "hello-world",
+      "mmePath": null,
+      "objPath": null,
+      "chiselSourcePath": "src/Chisel/examples/hello-world.cas",
+      "dataDirectoryPath": null,
+      "inputText": "x",
+      "expectedInstructionCount": 26,
+      "instructionLimit": 100,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/hello-world.screen.txt"
+    },
+    {
+      "name": "math-functions",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "DB/FUNK",
+      "inputText": "view math\r",
+      "expectedInstructionCount": 500000,
+      "instructionLimit": 500000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/math-functions.screen.txt"
+    },
+    {
+      "name": "sort-name-asc",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "Cornerstone",
+      "inputText": "view order\rsort name desc\r",
+      "expectedInstructionCount": 500000,
+      "instructionLimit": 500000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/sort-name-asc.screen.txt"
+    },
+    {
+      "name": "sort-orderid-desc",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "Cornerstone",
+      "inputText": "view order\rsort order_no desc\r",
+      "expectedInstructionCount": 500000,
+      "instructionLimit": 500000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/sort-orderid-desc.screen.txt"
+    },
+    {
+      "name": "sort-zip-asc",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "Cornerstone",
+      "inputText": "view order\rcolumn order_no name zip\rsort zip ascending\r",
+      "expectedInstructionCount": 2000000,
+      "instructionLimit": 2000000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/sort-zip-asc.screen.txt"
+    },
+    {
+      "name": "string-compare-regression",
+      "mmePath": null,
+      "objPath": null,
+      "chiselSourcePath": "test/Linchpin.ToolTests/TestData/runtime/string-compare-regression.cas",
+      "dataDirectoryPath": null,
+      "inputText": "xx",
+      "expectedInstructionCount": 114,
+      "instructionLimit": 200,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/string-compare-regression.screen.txt"
+    },
+    {
+      "name": "string-functions",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "DB/FUNK",
+      "inputText": "view string\r",
+      "expectedInstructionCount": 500000,
+      "instructionLimit": 500000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/string-functions.screen.txt"
+    },
+    {
+      "name": "time-functions",
+      "mmePath": "Cornerstone/CORNER.MME",
+      "objPath": "Cornerstone/CORNER.OBJ",
+      "chiselSourcePath": null,
+      "dataDirectoryPath": "DB/FUNK",
+      "inputText": "view time\r",
+      "expectedInstructionCount": 500000,
+      "instructionLimit": 500000,
+      "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/time-functions.screen.txt"
+    }
+  ]
+}

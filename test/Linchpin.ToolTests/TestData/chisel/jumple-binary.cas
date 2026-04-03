@@ -1,0 +1,15 @@
+.module Main
+
+.export Start, 0
+
+.proc Start
+    PUSH -1
+    PUSH0
+    JUMPLE taken
+    HALT 0
+
+taken:
+    HALT 1
+.endproc
+
+.entry Main.Start

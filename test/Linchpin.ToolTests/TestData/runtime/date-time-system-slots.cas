@@ -1,0 +1,98 @@
+; Validate that the host-backed date/time system slots are populated.
+
+.global OK_MSG=OK_MSG, FAIL_MSG=FAIL_MSG
+
+OK_MSG::
+.string "DATE/TIME OK"
+
+FAIL_MSG::
+.string "DATE/TIME FAIL"
+
+.module Main
+
+.export Start, 0
+
+.proc Start
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+    ; month: 1..12
+    LOADMG 0xCD
+    PUSH1
+    SUB
+    JUMPLZ fail
+    PUSHW 0x000C
+    LOADMG 0xCD
+    SUB
+    JUMPLZ fail
+
+    ; day: 1..31
+    LOADMG 0xCE
+    PUSH1
+    SUB
+    JUMPLZ fail
+    PUSHW 0x001F
+    LOADMG 0xCE
+    SUB
+    JUMPLZ fail
+
+    ; year: 1980..9999
+    LOADMG 0xCF
+    PUSHW 0x07BC
+    SUB
+    JUMPLZ fail
+    PUSHW 0x270F
+    LOADMG 0xCF
+    SUB
+    JUMPLZ fail
+
+    ; hour: 0..23
+    LOADMG 0xD0
+    PUSH0
+    SUB
+    JUMPLZ fail
+    PUSHW 0x0017
+    LOADMG 0xD0
+    SUB
+    JUMPLZ fail
+
+    ; minute: 0..59
+    LOADMG 0xD1
+    PUSH0
+    SUB
+    JUMPLZ fail
+    PUSHW 0x003B
+    LOADMG 0xD1
+    SUB
+    JUMPLZ fail
+
+    ; second: 0..59
+    LOADMG 0xD2
+    PUSH0
+    SUB
+    JUMPLZ fail
+    PUSHW 0x003B
+    LOADMG 0xD2
+    SUB
+    JUMPLZ fail
+
+    PUSHW OK_MSG
+    PUSHW OK_MSG
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+    HALT 1
+
+fail:
+    PUSHW FAIL_MSG
+    PUSHW FAIL_MSG
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+    HALT 1
+.endproc
+
+.entry Main.Start

@@ -1,0 +1,24 @@
+
+
+ Select a command from the menu.  Use arrow keys or type the command.
+                UPDATE      SELECT      VIEW        COLUMN      DETAILED
+    USE         SAVE        REPORT      SORT        PRINT       ALL-DONE
+ VIEW string                      1 Record                       NOT SORTED
+> S1: comp
+  S2: minicomputer
+  X:            3
+  Y:            2
+  INDEX S1 S2:            5
+  STRING S1 S2 X Y: compminicomputer
+  SUBSTRING S1 X Y: mp
+>
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ File: string                 Previous mode: Initial            Files viewed: 1

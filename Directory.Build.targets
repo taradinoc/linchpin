@@ -1,0 +1,46 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <UsingTask TaskName="GenerateGZipFile"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SourceFile ParameterType="System.String" Required="true" />
+      <DestinationFile ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Reflection" />
+      <Using Namespace="System.IO.Compression" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        Directory.CreateDirectory(Path.GetDirectoryName(DestinationFile)!);
+
+        using var input = File.OpenRead(SourceFile);
+        using var output = File.Create(DestinationFile);
+        var compressionAssembly = Assembly.Load("System.IO.Compression");
+        var compressionLevelType = compressionAssembly.GetType("System.IO.Compression.CompressionLevel", throwOnError: true)!;
+        var gzipStreamType = compressionAssembly.GetType("System.IO.Compression.GZipStream", throwOnError: true)!;
+        var optimal = System.Enum.Parse(compressionLevelType, "Optimal");
+        using var gzip = (Stream)System.Activator.CreateInstance(gzipStreamType, output, optimal)!;
+        input.CopyTo(gzip);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Chisel' Or '$(MSBuildProjectName)' == 'Linchpin'">
+    <CornerstoneGrammarSourcePath>$(MSBuildThisFileDirectory)data/instruction_grammar.json</CornerstoneGrammarSourcePath>
+    <CornerstoneEmbeddedGrammarPath>$(IntermediateOutputPath)instruction_grammar.json.gz</CornerstoneEmbeddedGrammarPath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Chisel' Or '$(MSBuildProjectName)' == 'Linchpin'">
+    <EmbeddedResource Include="$(CornerstoneEmbeddedGrammarPath)"
+                      Link="instruction_grammar.json.gz" />
+  </ItemGroup>
+
+  <Target Name="GenerateCornerstoneEmbeddedGrammar"
+          BeforeTargets="CreateManifestResourceNames"
+          Inputs="$(CornerstoneGrammarSourcePath)"
+          Outputs="$(CornerstoneEmbeddedGrammarPath)"
+          Condition="'$(MSBuildProjectName)' == 'Chisel' Or '$(MSBuildProjectName)' == 'Linchpin'">
+    <GenerateGZipFile SourceFile="$(CornerstoneGrammarSourcePath)"
+                      DestinationFile="$(CornerstoneEmbeddedGrammarPath)" />
+  </Target>
+</Project>

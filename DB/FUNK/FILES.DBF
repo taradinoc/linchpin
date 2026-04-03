@@ -1,0 +1,14 @@
+aggregate (002000)            Testing aggregate functions
+                              
+current_datetime (004000)     Testing real-time clock functions
+                              
+date (003000)                 Testing date functions
+                              
+financial (006000)            Testing financial functions
+                              
+math (001000)                 Testing functions
+                              
+string (007000)               Testing string functions
+                              
+time (005000)                 Testing time functions
+                              

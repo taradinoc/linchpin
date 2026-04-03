@@ -1,0 +1,6 @@
+.module Main
+
+.export Start, 0
+
+.proc Start
+    HALT 1

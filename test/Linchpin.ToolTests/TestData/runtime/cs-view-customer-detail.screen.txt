@@ -1,0 +1,24 @@
+
+
+ Select a command from the menu.  Use arrow keys or type the command.
+                UPDATE      SELECT      VIEW        COLUMN      DETAILED
+    USE         SAVE        REPORT      SORT        PRINT       ALL-DONE
+ VIEW CUSTOMER                    15 Records                     NOT SORTED   *
+> NAME: Newton Auto Rentals
+  STREET: 75 Monroe
+  CITY: Newton
+  STATE: MA
+  ZIP: 02210-1387
+  AREA CODE: 617
+  PHONE: 266-7715
+  EXT: 217
+  CONTACTS: Paul Henri
+            John Cain
+            James Carter
+            Elice Keith
+  TERMS: NET30
+  DISCOUNT:     .200
+  NOTES: Reliable pickup
+  TOTAL PURCHASES: $    224.80
+────────────────────────────────────────────────────────────────────────────────
+ File: CUSTOMER               Previous mode: Initial            Files viewed: 1

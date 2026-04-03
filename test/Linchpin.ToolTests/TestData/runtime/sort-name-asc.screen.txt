@@ -1,0 +1,24 @@
+
+
+ Select a command from the menu.  Use arrow keys or type the command.
+                UPDATE      SELECT      VIEW        COLUMN      DETAILED
+    USE         SAVE        REPORT      SORT        PRINT       ALL-DONE
+ VIEW ORDER                       34 Records                         SORTED   *
+  ORDER NO       NAME
+  --------------------------------------------------
+>        3       Watertown Car Center
+        31       Tosh's Service Center
+        30       Tosh's Service Center
+        23       Tosh's Service Center
+        19       T Motors
+         9       T Motors
+        16       Roxbury Auto Body and Repair
+        29       Roman Olds Dealers
+        20       ROMAN Olds Dealers
+         5       Roman Olds Dealers
+         1       Newton Auto Rentals
+         4       Medford Motor Service
+        34       Lexington Auto Service
+        33       Lexington Auto Service
+────────────────────────────────────────────────────────────────────────────────
+ File: ORDER                  Previous mode: Initial            Files viewed: 1

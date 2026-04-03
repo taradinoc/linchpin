@@ -1,0 +1,24 @@
+
+
+ Select a command from the menu.  Use arrow keys or type the command.
+                UPDATE      SELECT      VIEW        COLUMN      DETAILED
+    USE         SAVE        REPORT      SORT        PRINT       ALL-DONE
+ VIEW financial                   1 Record                       NOT SORTED
+> PRINCIPAL IN:     25000.00
+  INTEREST IN:          .03
+  PERIODS IN:        60.00
+  PAYMENT IN:       650.00
+  FV OUT:    105984.73
+  INTEREST OUT:          .02
+  PAYMENT OUT:       903.32
+  PV OUT:     17989.12
+>
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ File: financial              Previous mode: Initial            Files viewed: 1

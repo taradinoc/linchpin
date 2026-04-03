@@ -1,0 +1,24 @@
+
+
+ Select a command from the menu.  Use arrow keys or type the command.
+                UPDATE      SELECT      VIEW        COLUMN      DETAILED
+    USE         SAVE        REPORT      SORT        PRINT       ALL-DONE
+ VIEW date                        1 Record                       NOT SORTED
+> D1:  3/25/2026
+  D2:  4/01/2026
+  X:           14
+  ADD INTERVAL DATE D1 X:  4/08/2026
+  DAY D1:           25
+  DAY OF WEEK D1:            4
+  INTERVAL DATE D1 D2:           -7
+  MONTH D1:            3
+  TEXT DAY OF WEEK D1: Wednesday
+  TEXT MONTH D1: March
+  YEAR D1:         2026
+>
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ File: date                   Previous mode: Initial            Files viewed: 1

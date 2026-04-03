@@ -1,0 +1,254 @@
+.global STR_UPPER=STR_UPPER, STR_LOWER=STR_LOWER, STR_SPACE_LEFT=STR_SPACE_LEFT, STR_SPACE_RIGHT=STR_SPACE_RIGHT, STR_LOW=STR_LOW, STR_HIGH=STR_HIGH, STR_OFFSET=STR_OFFSET, STR_OFFSET_TARGET=STR_OFFSET_TARGET, SORT_KEY_LOW=SORT_KEY_LOW, SORT_KEY_HIGH=SORT_KEY_HIGH
+
+STR_UPPER::
+.string "A"
+
+STR_LOWER::
+.string "a"
+
+STR_SPACE_LEFT::
+.string "A B"
+
+STR_SPACE_RIGHT::
+.string "AB"
+
+STR_LOW::
+.string "AB"
+
+STR_HIGH::
+.string "AC"
+
+STR_OFFSET::
+.string "ABC"
+
+STR_OFFSET_TARGET::
+.string "BC"
+
+; Structured sort key aggregates for STRCMP tests.
+; Format: byte0=record_index, byte1=total_field_bytes, bytes2-5=link+descriptor,
+;         byte6=field_length, bytes7+=field_data.
+; ReadAggregateByte(handle, -1) = byte1 = total field byte count.
+; ReadAggregateByte(handle, 4) = byte6 = first sub-key length.
+; ReadAggregateByte(handle, 5+) = field data bytes compared by STRCMP.
+SORT_KEY_LOW::
+.byte 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x42, 0x00
+
+SORT_KEY_HIGH::
+.byte 0x02, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x43, 0x00
+
+.module Main
+
+.export Start, 0
+
+.proc Start locals 1
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    PUSHW STR_LOWER
+    PUSHW STR_UPPER
+    PUSH1
+    PUSH0
+    PUSH1
+    STRICMP
+    PUTL 0
+    PUSHL 0
+    JUMPZ test_stricmp_space_first
+    JUMP fail1
+
+test_stricmp_space_first:
+    PUSHW STR_SPACE_RIGHT
+    PUSHW STR_SPACE_LEFT
+    PUSH2
+    PUSH0
+    PUSH3
+    STRICMP
+    PUTL 0
+    PUSHL 0
+    JUMPZ fail2
+    PUSHL 0
+    PUSH1
+    ADD
+    JUMPZ fail2
+
+test_stricmp_space_second:
+    PUSHW STR_SPACE_LEFT
+    PUSHW STR_SPACE_RIGHT
+    PUSH3
+    PUSH0
+    PUSH2
+    STRICMP
+    PUTL 0
+    PUSHL 0
+    JUMPZ fail3
+    PUSHL 0
+    PUSH1
+    ADD
+    JUMPZ test_stricmp_lt
+    JUMP fail3
+
+test_stricmp_lt:
+    PUSHW STR_HIGH
+    PUSHW STR_LOW
+    PUSH2
+    PUSH0
+    PUSH2
+    STRICMP
+    PUTL 0
+    PUSHL 0
+    JUMPZ fail4
+    PUSHL 0
+    PUSH1
+    ADD
+    JUMPZ fail4
+
+test_stricmp_gt:
+    PUSHW STR_LOW
+    PUSHW STR_HIGH
+    PUSH2
+    PUSH0
+    PUSH2
+    STRICMP
+    PUTL 0
+    PUSHL 0
+    JUMPZ fail5
+    PUSHL 0
+    PUSH1
+    ADD
+    JUMPZ test_stricmp_offset
+    JUMP fail5
+
+test_stricmp_offset:
+    PUSHW STR_OFFSET_TARGET
+    PUSHW STR_OFFSET
+    PUSH2
+    PUSH1
+    PUSH2
+    STRICMP
+    PUTL 0
+    PUSHL 0
+	JUMPZ test_strcmp_plain_string
+    JUMP fail6
+
+test_strcmp_plain_string:
+    ; STRCMP on plain Pascal strings: both have payload[-1]=0 (remaining=0),
+    ; so MME returns 0 (equal) per the structured comparison algorithm.
+    PUSHW STR_LOW
+    PUSHW STR_HIGH
+    STRCMP
+    PUTL 0
+	PUSHL 0
+	JUMPZ test_strcmp_lt
+	JUMP fail7
+
+test_strcmp_lt:
+	PUSHW SORT_KEY_LOW
+	PUSHW SORT_KEY_HIGH
+	STRCMP
+	PUTL 0
+    PUSHL 0
+    JUMPZ fail8
+    PUSHL 0
+    PUSH1
+    ADD
+	JUMPZ test_strcmp_gt
+	JUMP fail8
+
+test_strcmp_gt:
+	PUSHW SORT_KEY_HIGH
+	PUSHW SORT_KEY_LOW
+    STRCMP
+    PUTL 0
+    PUSHL 0
+	JUMPZ fail9
+    PUSHL 0
+	PUSH -1
+    ADD
+    JUMPZ print_pass
+	JUMP fail9
+
+fail1:
+    PUSHB 0x46
+    PRCHAR
+    PUSHB 0x31
+    PRCHAR
+    JUMP wait_key
+
+fail2:
+    PUSHB 0x46
+    PRCHAR
+    PUSHB 0x32
+    PRCHAR
+    JUMP wait_key
+
+fail3:
+    PUSHB 0x46
+    PRCHAR
+    PUSHB 0x33
+    PRCHAR
+    JUMP wait_key
+
+fail4:
+    PUSHB 0x46
+    PRCHAR
+    PUSHB 0x34
+    PRCHAR
+    JUMP wait_key
+
+fail5:
+    PUSHB 0x46
+    PRCHAR
+    PUSHB 0x35
+    PRCHAR
+    JUMP wait_key
+
+fail6:
+    PUSHB 0x46
+    PRCHAR
+    PUSHB 0x36
+    PRCHAR
+    JUMP wait_key
+
+fail7:
+    PUSHB 0x46
+    PRCHAR
+    PUSHB 0x37
+    PRCHAR
+    JUMP wait_key
+
+fail8:
+    PUSHB 0x46
+    PRCHAR
+    PUSHB 0x38
+    PRCHAR
+    JUMP wait_key
+
+fail9:
+	PUSHB 0x46
+	PRCHAR
+	PUSHB 0x39
+	PRCHAR
+	JUMP wait_key
+
+print_pass:
+    PUSHB 0x4F
+    PRCHAR
+    PUSHB 0x4B
+    PRCHAR
+wait_key:
+    KBINPUT
+    JUMPF wait_key
+wait_key2:
+    KBINPUT
+    JUMPF wait_key2
+    HALT 1
+.endproc
+
+.entry Main.Start

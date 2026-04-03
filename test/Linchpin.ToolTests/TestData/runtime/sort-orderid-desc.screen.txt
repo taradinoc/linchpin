@@ -1,0 +1,24 @@
+
+
+ Select a command from the menu.  Use arrow keys or type the command.
+                UPDATE      SELECT      VIEW        COLUMN      DETAILED
+    USE         SAVE        REPORT      SORT        PRINT       ALL-DONE
+ VIEW ORDER                       34 Records                         SORTED   *
+  ORDER NO       NAME
+  --------------------------------------------------
+>       34       Lexington Auto Service
+        33       Lexington Auto Service
+        32       Cambridge Commons Cab Co.
+        31       Tosh's Service Center
+        30       Tosh's Service Center
+        29       Roman Olds Dealers
+        28       Concord Bus Line
+        27       Bunker Hill Garage
+        26       Hanover Service Station
+        25       Lexington Auto Service
+        24       Cambridge Commons Cab Co.
+        23       Tosh's Service Center
+        22       Bunker Hill Garage
+        21       Hanover Service Station
+────────────────────────────────────────────────────────────────────────────────
+ File: ORDER                  Previous mode: Initial            Files viewed: 1

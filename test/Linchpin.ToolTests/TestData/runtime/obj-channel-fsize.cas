@@ -1,0 +1,70 @@
+; Regression for FSIZE on the preopened OBJ channel from system slot 0xDA.
+
+.global BADMSG=BADMSG, OKMSG=OKMSG
+
+BADMSG::
+.string "OBJ FSIZE BAD"
+
+OKMSG::
+.string "OBJ FSIZE OK"
+
+.module Main
+
+.export Start, 0
+
+.proc Start locals 3
+    ; Clear screen
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+    ; Home the cursor
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    ; Channel id is the low five bits of system slot 0xDA.
+    LOADMG 0xDA
+    PUSHB 0x1F
+    AND
+    PUTL 0
+
+    ; The upper bits encode the module span in 512-byte pages.
+    ; Convert that to the expected FSIZE result in 256-byte blocks.
+    LOADMG 0xDA
+    PUSHW 0xFFFB
+    SHIFT
+    PUSH1
+    ASHIFT
+    PUSH1
+    ADD
+    PUTL 1
+
+    PUSHL 0
+    FSIZE
+    PUTL 2
+
+    PUSHL 2
+    PUSHL 1
+    JUMPEQ print_ok
+
+    PUSHW BADMSG
+    PUSHW BADMSG
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+    HALT 1
+
+print_ok:
+    PUSHW OKMSG
+    PUSHW OKMSG
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+    HALT 1
+.endproc
+
+.entry Main.Start

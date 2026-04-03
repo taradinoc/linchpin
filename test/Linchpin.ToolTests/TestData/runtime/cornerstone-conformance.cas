@@ -1,0 +1,1479 @@
+; Initial Cornerstone VM conformance battery.
+; This first cut provides a deterministic automated mode plus a small manual
+; display mode inside one multi-module image.
+
+.global ProgramScratch=0
+
+.global SUITE_TITLE=SUITE_TITLE, SUITE_SUBTITLE=SUITE_SUBTITLE, MODE_PROMPT=MODE_PROMPT
+.global AUTO_MODE=AUTO_MODE, MANUAL_TITLE=MANUAL_TITLE, MANUAL_LINE1=MANUAL_LINE1
+.global MANUAL_LINE2=MANUAL_LINE2, MANUAL_LINE3=MANUAL_LINE3, MANUAL_HELLO=MANUAL_HELLO
+.global MANUAL_WORLD=MANUAL_WORLD, MANUAL_LINE4=MANUAL_LINE4
+
+.global PASS_CONST=PASS_CONST, FAIL_CONST=FAIL_CONST, PASS_PGLOBAL=PASS_PGLOBAL
+.global FAIL_PGLOBAL=FAIL_PGLOBAL, PASS_LOCAL=PASS_LOCAL, FAIL_LOCAL=FAIL_LOCAL
+.global PASS_ARITH=PASS_ARITH, FAIL_ARITH=FAIL_ARITH, PASS_BITWISE=PASS_BITWISE
+.global FAIL_BITWISE=FAIL_BITWISE, PASS_BRANCH=PASS_BRANCH, FAIL_BRANCH=FAIL_BRANCH
+.global PASS_CALL=PASS_CALL, FAIL_CALL=FAIL_CALL, PASS_VECTOR=PASS_VECTOR
+.global FAIL_VECTOR=FAIL_VECTOR, PASS_TUPLE=PASS_TUPLE, FAIL_TUPLE=FAIL_TUPLE
+.global PASS_STRING=PASS_STRING, FAIL_STRING=FAIL_STRING, PASS_MODULE=PASS_MODULE
+.global FAIL_MODULE=FAIL_MODULE, PASS_BITFIELD_EDGE=PASS_BITFIELD_EDGE
+.global FAIL_BITFIELD_EDGE=FAIL_BITFIELD_EDGE, SUMMARY_PASS=SUMMARY_PASS
+.global SUMMARY_FAIL=SUMMARY_FAIL
+.global CMP_HEADER=CMP_HEADER, CMP_STRICMP_LABEL=CMP_STRICMP_LABEL
+.global CMP_STRCMP_LABEL=CMP_STRCMP_LABEL, CMP_MEMCMP_LABEL=CMP_MEMCMP_LABEL
+.global CMP_MEMCMPO_LABEL=CMP_MEMCMPO_LABEL
+.global STR_CMP_LOW=STR_CMP_LOW, STR_CMP_HIGH=STR_CMP_HIGH
+.global RAW_STRCMP_LOW2=RAW_STRCMP_LOW2, STR_CMP_LOW2=STR_CMP_LOW2
+
+SUITE_TITLE::
+.string "Cornerstone VM"
+
+SUITE_SUBTITLE::
+.string "Conformance v1"
+
+MODE_PROMPT::
+.string "Any=auto  M=manual"
+
+AUTO_MODE::
+.string "AUTO MODE"
+
+MANUAL_TITLE::
+.string "MANUAL DISPLAY"
+
+MANUAL_LINE1::
+.string "Expect HELLO on row 4."
+
+MANUAL_LINE2::
+.string "Expect WORLD on row 6."
+
+MANUAL_LINE3::
+.string "Press any key to exit."
+
+MANUAL_LINE4::
+.string "Expect rule on row 8."
+
+MANUAL_HELLO::
+.string "HELLO"
+
+MANUAL_WORLD::
+.string "WORLD"
+
+PASS_CONST::
+.string "PASS CONST/STACK"
+
+FAIL_CONST::
+.string "FAIL CONST/STACK"
+
+PASS_PGLOBAL::
+.string "PASS PROGRAM GLOBAL"
+
+FAIL_PGLOBAL::
+.string "FAIL PROGRAM GLOBAL"
+
+PASS_LOCAL::
+.string "PASS LOCAL"
+
+FAIL_LOCAL::
+.string "FAIL LOCAL"
+
+PASS_ARITH::
+.string "PASS ARITH"
+
+FAIL_ARITH::
+.string "FAIL ARITH"
+
+PASS_BITWISE::
+.string "PASS BITWISE"
+
+FAIL_BITWISE::
+.string "FAIL BITWISE"
+
+PASS_BRANCH::
+.string "PASS BRANCH"
+
+FAIL_BRANCH::
+.string "FAIL BRANCH"
+
+PASS_CALL::
+.string "PASS CALL"
+
+FAIL_CALL::
+.string "FAIL CALL"
+
+PASS_VECTOR::
+.string "PASS VECTOR"
+
+FAIL_VECTOR::
+.string "FAIL VECTOR"
+
+PASS_TUPLE::
+.string "PASS TUPLE"
+
+FAIL_TUPLE::
+.string "FAIL TUPLE"
+
+PASS_STRING::
+.string "PASS STRING"
+
+FAIL_STRING::
+.string "FAIL STRING"
+
+PASS_MODULE::
+.string "PASS MODULE GLOBAL"
+
+FAIL_MODULE::
+.string "FAIL MODULE GLOBAL"
+
+PASS_BITFIELD_EDGE::
+.string "PASS BITFIELD EDGE"
+
+FAIL_BITFIELD_EDGE::
+.string "FAIL BITFIELD EDGE"
+
+SUMMARY_PASS::
+.string "SUMMARY PASS"
+
+SUMMARY_FAIL::
+.string "SUMMARY FAIL"
+
+CMP_HEADER::
+.string "COMPARE VALUES"
+
+CMP_STRICMP_LABEL::
+.string "SIC "
+
+CMP_STRCMP_LABEL::
+.string "SCM "
+
+CMP_MEMCMP_LABEL::
+.string "MCM "
+
+CMP_MEMCMPO_LABEL::
+.string "MCO "
+
+STR_UPPER::
+.string "A"
+
+STR_LOWER::
+.string "a"
+
+STR_FIND::
+.string "ABC"
+
+; Two short strings for ordered comparisons.
+; "AB" sorts before "AC" under every comparison convention.
+STR_CMP_LOW::
+.string "AB"
+
+STR_CMP_HIGH::
+.string "AC"
+
+; Structured sort key aggregates for STRCMP.
+; payload[-1] (raw byte 1) = total field byte count.
+; payload[4] (raw byte 6) = first sub-key length.
+; payload[5+] = sub-key data bytes.
+RAW_STRCMP_LOW::
+.byte 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x42, 0x00
+
+RAW_STRCMP_LOW2::
+.byte 0x02, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x42, 0x00
+
+STR_CMP_LOW2::
+.string "AB"
+
+RAW_STRCMP_HIGH::
+.byte 0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x43, 0x00
+
+.program_globals 0x0000
+
+.module Main
+
+.module_globals 0x0000
+
+.global FailFlag=0
+
+.export Start, 0
+.export NearIncrement, 1
+.export NearAdd2, 2
+.export NearAdd3, 3
+
+.proc Start locals 1
+    CALL0 ClearScreenHome
+
+    PUSHW SUITE_TITLE
+    PUSH0
+    CALL2 PrintAt
+
+    PUSHW SUITE_SUBTITLE
+    PUSH1
+    CALL2 PrintAt
+
+    PUSHW MODE_PROMPT
+    PUSH2
+    CALL2 PrintAt
+
+read_mode:
+    KBINPUT
+    STOREL 0
+    JUMPF read_mode
+
+    PUSHB 0x4D
+    PUSHL 0
+    JUMPEQ run_manual
+    PUSHB 0x6D
+    PUSHL 0
+    JUMPEQ run_manual
+    JUMP run_auto
+
+run_auto:
+    CALL0 RunAutomatedSuite
+    HALT 1
+
+run_manual:
+    CALL0 RunManualSuite
+    HALT 1
+.endproc
+
+.proc RunAutomatedSuite
+    CALL0 ClearScreenHome
+    PUSH0
+    PUTMG FailFlag
+
+    PUSHW SUITE_TITLE
+    PUSH0
+    CALL2 PrintAt
+
+    PUSHW AUTO_MODE
+    PUSH1
+    CALL2 PrintAt
+
+    CALL0 TestConstStack
+    JUMPZ auto_fail_const
+    PUSHW PASS_CONST
+    PUSH4
+    CALL2 PrintAt
+    JUMP auto_program_global
+auto_fail_const:
+    PUSHW FAIL_CONST
+    PUSH4
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_program_global:
+    CALL0 TestProgramGlobal
+    JUMPZ auto_fail_program_global
+    PUSHW PASS_PGLOBAL
+    PUSH5
+    CALL2 PrintAt
+    JUMP auto_local
+auto_fail_program_global:
+    PUSHW FAIL_PGLOBAL
+    PUSH5
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_local:
+    CALL0 TestLocal
+    JUMPZ auto_fail_local
+    PUSHW PASS_LOCAL
+    PUSH6
+    CALL2 PrintAt
+    JUMP auto_arith
+auto_fail_local:
+    PUSHW FAIL_LOCAL
+    PUSH6
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_arith:
+    CALL0 TestArithmetic
+    JUMPZ auto_fail_arith
+    PUSHW PASS_ARITH
+    PUSH7
+    CALL2 PrintAt
+    JUMP auto_bitwise
+auto_fail_arith:
+    PUSHW FAIL_ARITH
+    PUSH7
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_bitwise:
+    CALL0 TestBitwise
+    JUMPZ auto_fail_bitwise
+    PUSHW PASS_BITWISE
+    PUSH8
+    CALL2 PrintAt
+    JUMP auto_branch
+auto_fail_bitwise:
+    PUSHW FAIL_BITWISE
+    PUSH8
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_branch:
+    CALL0 TestBranch
+    JUMPZ auto_fail_branch
+    PUSHW PASS_BRANCH
+    PUSHW 0x0009
+    CALL2 PrintAt
+    JUMP auto_call
+auto_fail_branch:
+    PUSHW FAIL_BRANCH
+    PUSHW 0x0009
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_call:
+    CALL0 TestCalls
+    JUMPZ auto_fail_call
+    PUSHW PASS_CALL
+    PUSHW 0x000A
+    CALL2 PrintAt
+    JUMP auto_vector
+auto_fail_call:
+    PUSHW FAIL_CALL
+    PUSHW 0x000A
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_vector:
+    CALL0 TestVector
+    JUMPZ auto_fail_vector
+    PUSHW PASS_VECTOR
+    PUSHW 0x000B
+    CALL2 PrintAt
+    JUMP auto_tuple
+auto_fail_vector:
+    PUSHW FAIL_VECTOR
+    PUSHW 0x000B
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_tuple:
+    CALL0 TestTuple
+    JUMPZ auto_fail_tuple
+    PUSHW PASS_TUPLE
+    PUSHW 0x000C
+    CALL2 PrintAt
+    JUMP auto_string
+auto_fail_tuple:
+    PUSHW FAIL_TUPLE
+    PUSHW 0x000C
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_string:
+    CALL0 TestString
+    JUMPZ auto_fail_string
+    PUSHW PASS_STRING
+    PUSHW 0x000D
+    CALL2 PrintAt
+    JUMP auto_module
+auto_fail_string:
+    PUSHW FAIL_STRING
+    PUSHW 0x000D
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_module:
+    CALL0 TestModuleGlobal
+    JUMPZ auto_fail_module
+    PUSHW PASS_MODULE
+    PUSHW 0x000E
+    CALL2 PrintAt
+    JUMP auto_compare
+auto_fail_module:
+    PUSHW FAIL_MODULE
+    PUSHW 0x000E
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_compare:
+    PUSHW CMP_HEADER
+    PUSHW 0x0010
+    CALL2 PrintAt
+    CALL0 PrintCompareValues
+
+    CALL0 TestBitFieldEdgeCases
+    JUMPZ auto_fail_bitfield_edge
+    PUSHW PASS_BITFIELD_EDGE
+    PUSHW 0x0015
+    CALL2 PrintAt
+    JUMP auto_summary
+
+auto_fail_bitfield_edge:
+    PUSHW FAIL_BITFIELD_EDGE
+    PUSHW 0x0015
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_summary:
+    LOADMG FailFlag
+    JUMPZ auto_summary_pass
+    PUSHW SUMMARY_FAIL
+    PUSHW 0x0017
+    CALL2 PrintAt
+    CALL0 WaitForKey
+    RET
+
+auto_summary_pass:
+    PUSHW SUMMARY_PASS
+    PUSHW 0x0017
+    CALL2 PrintAt
+    CALL0 WaitForKey
+    RET
+.endproc
+
+.proc RunManualSuite
+    CALL0 ClearScreenHome
+
+    PUSHW MANUAL_TITLE
+    PUSH0
+    CALL2 PrintAt
+
+    PUSHW MANUAL_LINE1
+    PUSH1
+    CALL2 PrintAt
+
+    PUSHW MANUAL_LINE2
+    PUSH2
+    CALL2 PrintAt
+
+    PUSHW MANUAL_LINE3
+    PUSH3
+    CALL2 PrintAt
+
+    PUSHW MANUAL_HELLO
+    PUSH4
+    CALL2 PrintAt
+
+    PUSHW MANUAL_LINE4
+    PUSH7
+    CALL2 PrintAt
+
+    CALLF0 Aux.PrintManualWorld
+    POP
+
+    PUSHW 0x0008
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    PUSHW 0x0012
+    XDISP 6
+    PULL
+
+manual_wait:
+    KBINPUT
+    JUMPF manual_wait
+    RET
+.endproc
+
+.proc ClearScreenHome
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    RET
+.endproc
+
+.proc PrintAt locals 2
+    PUSHL 1
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    PUSHL 0
+    PUSHL 0
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+    RET
+.endproc
+
+.proc MarkFailure
+    PUSH1
+    PUTMG FailFlag
+    RET
+.endproc
+
+.proc WaitForKey
+wait_key:
+    KBINPUT
+    JUMPF wait_key
+    RET
+.endproc
+
+.proc NearValue
+    PUSH1
+    RETURN
+.endproc
+
+.proc NearIncrement locals 1
+    PUSHL 0
+    PUSH1
+    ADD
+    RETURN
+.endproc
+
+.proc NearAdd2 locals 2
+    PUSHL 0
+    PUSHL 1
+    ADD
+    RETURN
+.endproc
+
+.proc NearAdd3 locals 3
+    PUSHL 0
+    PUSHL 1
+    ADD
+    PUSHL 2
+    ADD
+    RETURN
+.endproc
+
+.proc TestConstStack
+    PUSHm1
+    PUSH1
+    ADD
+    JUMPNZ test_const_fail
+
+    PUSHm8
+    PUSH8
+    ADD
+    JUMPNZ test_const_fail
+
+    PUSH2
+    PUSH4
+    ADD
+    PUSH6
+    JUMPNE test_const_fail
+
+    PUSH5
+    PUSH6
+    ADD
+    PUSHW 0x000B
+    JUMPNE test_const_fail
+
+    PUSHFF
+    PUSHW 0x00FF
+    JUMPNE test_const_fail
+
+    PUSH7
+    PUSH3
+    PULL
+    DUP
+    ADD
+    PUSHW 0x000E
+    JUMPEQ test_const_pass
+test_const_fail:
+    RZERO
+test_const_pass:
+    PUSH1
+    RETURN
+.endproc
+
+.proc TestProgramGlobal
+    PUSHW 0x1234
+    STOREG ProgramScratch
+    PULL
+    LOADG ProgramScratch
+    PUSHW 0x1234
+    JUMPNE test_program_global_fail
+
+    PUSHW 0x2345
+    PUTG ProgramScratch
+    LOADG ProgramScratch
+    PUSHW 0x2345
+    JUMPEQ test_program_global_pass
+
+test_program_global_fail:
+    RZERO
+test_program_global_pass:
+    PUSH1
+    RETURN
+.endproc
+
+.proc TestLocal locals 2
+    PUSHW 0x0033
+    STOREL 0
+    PULL
+    LOADL 0
+    PUSHW 0x0033
+    JUMPNE test_local_fail
+
+    INCL 0
+    PUSHW 0x0034
+    JUMPNE test_local_fail
+
+    DECL 0
+    PUSHW 0x0033
+    JUMPNE test_local_fail
+
+    LOADL 0
+    PUSH1
+    ADD
+    PUTL 1
+
+    INCLV 1
+    LOADL 1
+    PUSHW 0x0035
+    JUMPEQ test_local_pass
+
+test_local_fail:
+    RZERO
+
+test_local_pass:
+    PUSH1
+    RETURN
+.endproc
+
+.proc TestArithmetic
+    PUSHW 0x0007
+    PUSHW 0x0005
+    ADD
+    PUSHW 0x000C
+    JUMPNE test_arith_fail
+
+    PUSHW 0x0009
+    PUSHW 0x0004
+    SUB
+    PUSHW 0x0005
+    JUMPNE test_arith_fail
+
+    PUSHW 0x0003
+    PUSHW 0x0006
+    MUL
+    PUSHW 0x0012
+    JUMPNE test_arith_fail
+
+    PUSHW 0x0015
+    PUSHW 0x0003
+    DIV
+    PUSH7
+    JUMPNE test_arith_fail
+
+    PUSHW 0x0016
+    PUSH5
+    MOD
+    PUSH2
+    JUMPNE test_arith_fail
+
+    PUSH2
+    PUSH3
+    REST
+    PUSH5
+    JUMPNE test_arith_fail
+
+    PUSH3
+    PUSH1
+    SHIFT
+    PUSH6
+    JUMPNE test_arith_fail
+
+    PUSHW 0xFFF0
+    PUSHW 0xFFFE
+    ASHIFT
+    PUSHW 0xFFFC
+    JUMPNE test_arith_fail
+
+    PUSHW 0x0002
+    NEG
+    PUSHW 0xFFFE
+    JUMPEQ test_arith_pass
+
+test_arith_fail:
+    RZERO
+
+test_arith_pass:
+    PUSH1
+    RETURN
+.endproc
+
+.proc TestBitwise
+    PUSHW 0x00F0
+    PUSHW 0x0F0F
+    AND
+    PUSH0
+    JUMPNE test_bitwise_fail
+
+    PUSHW 0x00F0
+    PUSHW 0x0F0F
+    OR
+    PUSHW 0x0FFF
+    JUMPNE test_bitwise_fail
+
+    PUSHW 0x00FF
+    PUSHW 0x0F0F
+    XOR
+    PUSHW 0x0FF0
+    JUMPNE test_bitwise_fail
+
+    PUSH0
+    NOT
+    PUSHW 0xFFFF
+    JUMPEQ test_bitwise_pass
+
+test_bitwise_fail:
+    RZERO
+
+test_bitwise_pass:
+    PUSH1
+    RETURN
+.endproc
+
+.proc TestBranch
+    PUSH_NIL
+    JUMPF test_branch_false_ok
+    RZERO
+test_branch_false_ok:
+    PUSH0
+    JUMPNF test_branch_not_false_ok
+    RZERO
+test_branch_not_false_ok:
+    PUSH0
+    JUMPNZ test_branch_fail
+
+    PUSH1
+    JUMPZ test_branch_fail
+
+    PUSH1
+    JUMPGZ test_branch_gt_zero_ok
+    RZERO
+test_branch_gt_zero_ok:
+    PUSH0
+    JUMPLEZ test_branch_le_zero_ok
+    RZERO
+test_branch_le_zero_ok:
+    PUSHm1
+    JUMPLZ test_branch_lt_zero_ok
+    RZERO
+test_branch_lt_zero_ok:
+    PUSH0
+    JUMPGEZ test_branch_ge_zero_ok
+    RZERO
+test_branch_ge_zero_ok:
+
+    PUSHW 0x0004
+    PUSHW 0x0004
+    JUMPNE test_branch_fail
+
+    PUSHW 0x0004
+    PUSHW 0x0005
+    JUMPEQ test_branch_fail
+
+    PUSH2
+    PUSH1
+    JUMPL test_branch_lt_ok
+    RZERO
+test_branch_lt_ok:
+    PUSH2
+    PUSH2
+    JUMPLE test_branch_le_ok
+    RZERO
+test_branch_le_ok:
+    PUSH2
+    PUSH3
+    JUMPG test_branch_gt_ok
+    RZERO
+test_branch_gt_ok:
+    PUSH2
+    PUSH2
+    JUMPGE test_branch_pass
+
+test_branch_fail:
+    RZERO
+
+test_branch_pass:
+    PUSH1
+    RETURN
+.endproc
+
+.proc TestCalls locals 2
+    CALL0 NearValue
+    JUMPZ test_calls_fail
+
+    PUSHW 0x0009
+    CALL1 NearIncrement
+    PUSHW 0x000A
+    JUMPNE test_calls_fail
+
+    PUSH2
+    PUSH3
+    CALL2 NearAdd2
+    PUSH5
+    JUMPNE test_calls_fail
+
+    PUSH1
+    PUSH2
+    PUSH3
+    CALL3 NearAdd3
+    PUSH6
+    JUMPNE test_calls_fail
+
+    PUSH4
+    PUSH5
+    CALLF2 Aux.FarAdd2
+    PUSHW 0x0009
+    JUMPNE test_calls_fail
+
+    PUSHW 0x0009
+    CALLF1 Aux.DoubleValue
+    PUSHW 0x0012
+    JUMPNE test_calls_fail
+
+    CALLF0 Aux.ReturnPair
+    PUTL 0
+    PUTL 1
+    LOADL 1
+    PUSHW 0x1111
+    JUMPNE test_calls_fail
+    LOADL 0
+    PUSHW 0x2222
+    JUMPNE test_calls_fail
+
+    CALLF0 Aux.ReturnFalse
+    JUMPF test_calls_zero
+    JUMP test_calls_fail
+
+test_calls_zero:
+    CALLF0 Aux.ReturnZero
+    JUMPZ test_calls_pass
+
+test_calls_fail:
+    RZERO
+
+test_calls_pass:
+    PUSH1
+    RETURN
+.endproc
+
+.proc TestVector locals 6
+    PUSHW 0x0003
+    VALLOC
+    PUTL 0
+    PUSHL 0
+    PUSHW 0x1111
+    VPUTW_ 0
+    PUSHL 0
+    PUSHW 0x2222
+    VPUTW_ 1
+    PUSHL 0
+    PUSHW 0x3333
+    VPUTW_ 2
+
+    PUSHL 0
+    PUSH1
+    VLOADW
+    PUSHW 0x1111
+    JUMPNE test_vector_fail
+
+    PUSHL 0
+    VLOADW_ 1
+    PUSHW 0x2222
+    JUMPNE test_vector_fail
+
+    PUSHW 0x0002
+    VALLOC
+    PUTL 1
+    PUSHL 1
+    PUSH1
+    PUSHW 0x4444
+    VPUTW
+    PUSHL 1
+    PUSH1
+    VLOADW
+    PUSHW 0x4444
+    JUMPNE test_vector_fail
+
+    PUSHW 0x0101
+    PUSHW 0x0202
+    PUSH2
+    VALLOCI
+    PUTL 1
+    PUSHL 1
+    VLOADW_ 0
+    PUSHW 0x0101
+    JUMPNE test_vector_fail
+    PUSHL 1
+    VLOADW_ 1
+    PUSHW 0x0202
+    JUMPNE test_vector_fail
+
+    PUSHL 1
+    PUSHB 0xAA
+    VPUTB_ 0
+    PUSHL 1
+    VLOADB_ 0
+    PUSHW 0x00AA
+    JUMPNE test_vector_fail
+
+    PUSHL 1
+    PUSH3
+    PUSHB 0x55
+    VPUTB
+    PUSHL 1
+    PUSH3
+    VLOADB
+    PUSHW 0x0055
+    JUMPNE test_vector_fail
+
+    PUSH2
+    VALLOC
+    PUTL 2
+    PUSHL 2
+    PUSH2
+    PUSHW 0x7777
+    VECSETW
+    PUTL 2
+    PUSHL 2
+    VLOADW_ 0
+    PUSHW 0x7777
+    JUMPNE test_vector_fail
+    PUSHL 2
+    VLOADW_ 1
+    PUSHW 0x7777
+    JUMPNE test_vector_fail
+
+    PUSH2
+    VALLOC
+    PUTL 3
+    PUSHL 3
+    PUSHW 0x0004
+    PUSHB 0x5A
+    VECSETB
+    PUTL 3
+    PUSHL 3
+    VLOADB_ 0
+    PUSHW 0x005A
+    JUMPNE test_vector_fail
+    PUSHL 3
+    VLOADB_ 3
+    PUSHW 0x005A
+    JUMPNE test_vector_fail
+
+    PUSHW 0x1111
+    PUSHW 0x2222
+    PUSH2
+    VALLOCI
+    PUTL 4
+    PUSH2
+    VALLOC
+    PUTL 5
+    PUSHL 4
+    PUSH2
+    PUSHL 5
+    VECCPYW
+    PUTL 5
+    PUSHL 5
+    VLOADW_ 0
+    PUSHW 0x1111
+    JUMPNE test_vector_fail
+    PUSHL 5
+    VLOADW_ 1
+    PUSHW 0x2222
+    JUMPNE test_vector_fail
+
+    PUSHL 3
+    PUSH2
+    PUSHL 2
+    PUSH0
+    PUSH1
+    VECCPYB
+    PUTL 2
+    PUSHL 2
+    VLOADB_ 1
+    PUSHW 0x005A
+    JUMPNE test_vector_fail
+    PUSHL 2
+    VLOADB_ 2
+    PUSHW 0x005A
+    JUMPNE test_vector_fail
+
+    PUSHL 5
+    PUSH2
+    VFREE
+    PUSHL 4
+    PUSH2
+    VFREE
+    PUSHL 3
+    PUSH2
+    VFREE
+    PUSHL 2
+    PUSH2
+    VFREE
+    PUSHL 1
+    PUSHW 0x0002
+    VFREE
+    PUSHL 0
+    PUSHW 0x0003
+    VFREE
+    PUSH1
+    RETURN
+
+test_vector_fail:
+    PUSHL 1
+    PUSHW 0x0002
+    VFREE
+    PUSHL 0
+    PUSHW 0x0003
+    VFREE
+    RZERO
+.endproc
+
+.proc TestTuple locals 2
+    PUSHW 0x0002
+    TALLOC
+    PUTL 0
+    PUSHL 0
+    PUSHW 0x0061
+    VPUTW_ 0
+    PUSHL 0
+    VLOADW_ 0
+    PUSHW 0x0061
+    JUMPNE test_tuple_fail
+
+    PUSHW 0x00A1
+    PUSHW 0x00B2
+    PUSH2
+    TALLOCI
+    PUTL 1
+    PUSHL 1
+    VLOADW_ 0
+    PUSHW 0x00A1
+    JUMPNE test_tuple_fail
+    PUSHL 1
+    VLOADW_ 1
+    PUSHW 0x00B2
+    JUMPEQ test_tuple_pass
+
+test_tuple_fail:
+    RZERO
+test_tuple_pass:
+    PUSH1
+    RETURN
+.endproc
+
+.proc TestString
+    PUSHW STR_LOWER
+    PUSHW STR_UPPER
+    PUSH1
+    PUSH0
+    PUSH1
+    STRICMP
+    JUMPNZ test_string_fail
+
+    PUSHW RAW_STRCMP_LOW
+    PUSHW RAW_STRCMP_HIGH
+    STRCMP
+    PUSHW 0xFFFF
+    JUMPNE test_string_fail
+
+    PUSHB 0x42
+    PUSHW STR_FIND
+    STRCHR
+    JUMPF test_string_fail
+
+    PUSHB 0x5A
+    PUSHW STR_FIND
+    STRCHR
+    JUMPNF test_string_fail
+
+    JUMP test_string_pass
+
+test_string_fail:
+    RZERO
+
+test_string_pass:
+    PUSH1
+    RETURN
+.endproc
+
+.proc TestModuleGlobal
+    CALLF0 Aux.BumpCounter
+    PUSH1
+    JUMPNE test_module_fail
+
+    CALLF0 Aux.BumpCounter
+    PUSHW 0x0002
+    JUMPEQ test_module_pass
+
+test_module_fail:
+    RZERO
+
+test_module_pass:
+    PUSH1
+    RETURN
+.endproc
+
+.proc TestBitFieldEdgeCases locals 2
+    PUSHW 0x1357
+    PUSH1
+    VALLOCI
+    PUTL 0
+
+    BITSVL 0x0000
+    JUMPNZ test_bitfield_edge_fail
+
+    PUSHW 0xFFFF
+    BBSETVL 0x0000
+    PUSHL 0
+    VLOADW_ 0
+    PUSHW 0x1357
+    JUMPNE test_bitfield_edge_fail
+
+    PUSHL 0
+    PUSHW 0x8000
+    VPUTW_ 0
+    BITSVL 0xF200
+    PUSH1
+    JUMPNE test_bitfield_edge_fail
+
+    PUSHL 0
+    PUSH0
+    VPUTW_ 0
+    PUSH3
+    BBSETVL 0xF200
+    PUSHL 0
+    VLOADW_ 0
+    PUSHW 0x8000
+    JUMPNE test_bitfield_edge_fail
+
+    PUSHW 0x2468
+    PUSH1
+    VALLOCI
+    PUTL 1
+
+    PUSHL 1
+    BITSV 0x0000
+    JUMPNZ test_bitfield_edge_fail
+
+    PUSHW 0xFFFF
+    PUSHL 1
+    BBSETV 0x0000
+    PUSHL 1
+    VLOADW_ 0
+    PUSHW 0x2468
+    JUMPNE test_bitfield_edge_fail
+
+    PUSHL 1
+    PUSHW 0x8000
+    VPUTW_ 0
+    PUSHL 1
+    BITSV 0xF200
+    PUSH1
+    JUMPNE test_bitfield_edge_fail
+
+    PUSHL 1
+    PUSH0
+    VPUTW_ 0
+    PUSH3
+    PUSHL 1
+    BBSETV 0xF200
+    PUSHL 1
+    VLOADW_ 0
+    PUSHW 0x8000
+    JUMPNE test_bitfield_edge_fail
+
+    PUSHL 1
+    PUSH1
+    VFREE
+    PUSHL 0
+    PUSH1
+    VFREE
+    PUSH1
+    RETURN
+
+test_bitfield_edge_fail:
+    RZERO
+.endproc
+
+; ---------------------------------------------------------------------------
+; PrintCompareValues — prints the actual return value for each comparison
+; opcode in the LT, EQ, and GT cases.  Four rows, one per opcode family:
+;   row 0x11  SIC  xxxx xxxx xxxx   (STRICMP)
+;   row 0x12  SCM  xxxx xxxx xxxx   (STRCMP)
+;   row 0x13  MCM  xxxx xxxx xxxx   (MEMCMP)
+;   row 0x14  MCO  xxxx xxxx xxxx   (MEMCMPO)
+; xxxx is the raw 16-bit value pushed by the opcode, printed as hex.
+; ---------------------------------------------------------------------------
+
+.proc PrintCompareValues locals 1
+
+    ; --- STRICMP row (0x11) ---
+    PUSHW CMP_STRICMP_LABEL
+    PUSHW 0x0011
+    CALL2 PrintAt
+
+    ; STRICMP LT: first="AB" < second="AC"
+    PUSHW STR_CMP_HIGH
+    PUSHW STR_CMP_LOW
+    PUSH2
+    PUSH0
+    PUSH2
+    STRICMP
+    CALL1 PrintHex4
+    POP
+    CALL0 PrintSpace
+
+    ; STRICMP EQ: first="A" = second="a" (case-insensitive)
+    PUSHW STR_LOWER
+    PUSHW STR_UPPER
+    PUSH1
+    PUSH0
+    PUSH1
+    STRICMP
+    CALL1 PrintHex4
+    POP
+    CALL0 PrintSpace
+
+    ; STRICMP GT: first="AC" > second="AB"
+    PUSHW STR_CMP_LOW
+    PUSHW STR_CMP_HIGH
+    PUSH2
+    PUSH0
+    PUSH2
+    STRICMP
+    CALL1 PrintHex4
+    POP
+
+    ; --- STRCMP row (0x12) ---
+    PUSHW CMP_STRCMP_LABEL
+    PUSHW 0x0012
+    CALL2 PrintAt
+
+    ; STRCMP LT: RAW_LOW < RAW_HIGH
+    PUSHW RAW_STRCMP_LOW
+    PUSHW RAW_STRCMP_HIGH
+    STRCMP
+    CALL1 PrintHex4
+    POP
+    CALL0 PrintSpace
+
+    ; STRCMP EQ: RAW_LOW = RAW_LOW2 (distinct handles, same content)
+    PUSHW RAW_STRCMP_LOW
+    PUSHW RAW_STRCMP_LOW2
+    STRCMP
+    CALL1 PrintHex4
+    POP
+    CALL0 PrintSpace
+
+    ; STRCMP GT: RAW_HIGH > RAW_LOW
+    PUSHW RAW_STRCMP_HIGH
+    PUSHW RAW_STRCMP_LOW
+    STRCMP
+    CALL1 PrintHex4
+    POP
+
+    ; --- MEMCMP row (0x13) ---
+    PUSHW CMP_MEMCMP_LABEL
+    PUSHW 0x0013
+    CALL2 PrintAt
+
+    ; MEMCMP LT: STR_CMP_LOW payload < STR_CMP_HIGH payload
+    ; stack: secondHandle, firstHandle, byteCount
+    PUSHW STR_CMP_HIGH
+    PUSHW STR_CMP_LOW
+    PUSH2
+    MEMCMP
+    CALL1 PrintHex4
+    POP
+    CALL0 PrintSpace
+
+    ; MEMCMP EQ: STR_CMP_LOW = STR_CMP_LOW2 (distinct handles, same content)
+    PUSHW STR_CMP_LOW
+    PUSHW STR_CMP_LOW2
+    PUSH2
+    MEMCMP
+    CALL1 PrintHex4
+    POP
+    CALL0 PrintSpace
+
+    ; MEMCMP GT: STR_CMP_HIGH payload > STR_CMP_LOW payload
+    PUSHW STR_CMP_LOW
+    PUSHW STR_CMP_HIGH
+    PUSH2
+    MEMCMP
+    CALL1 PrintHex4
+    POP
+
+    ; --- MEMCMPO row (0x14) ---
+    PUSHW CMP_MEMCMPO_LABEL
+    PUSHW 0x0014
+    CALL2 PrintAt
+
+    ; MEMCMPO LT: first raw bytes < second payload bytes
+    ; first=STR_CMP_LOW raw offset 2 ("AB"), second=STR_CMP_HIGH payload ("AC")
+    ; stack: secondHandle, firstHandle, byteCount, firstOffset
+    PUSHW STR_CMP_HIGH
+    PUSHW STR_CMP_LOW
+    PUSH2
+    PUSH2
+    MEMCMPO
+    CALL1 PrintHex4
+    POP
+    CALL0 PrintSpace
+
+    ; MEMCMPO EQ: first raw = second payload (distinct handles, same content)
+    ; first=STR_CMP_LOW raw offset 2, second=STR_CMP_LOW2 payload
+    PUSHW STR_CMP_LOW2
+    PUSHW STR_CMP_LOW
+    PUSH2
+    PUSH2
+    MEMCMPO
+    CALL1 PrintHex4
+    POP
+    CALL0 PrintSpace
+
+    ; MEMCMPO GT: first raw bytes > second payload bytes
+    ; first=STR_CMP_HIGH raw offset 2 ("AC"), second=STR_CMP_LOW payload ("AB")
+    PUSHW STR_CMP_LOW
+    PUSHW STR_CMP_HIGH
+    PUSH2
+    PUSH2
+    MEMCMPO
+    CALL1 PrintHex4
+    POP
+
+    RET
+.endproc
+
+; Print the 16-bit value in L0 as four uppercase hex digits.
+.proc PrintHex4 locals 1
+    ; nibble 3 (bits 15-12)
+    PUSHL 0
+    PUSHW 0xFFF4
+    SHIFT
+    PUSHW 0x000F
+    AND
+    CALL1 PrintHexDigit
+    POP
+
+    ; nibble 2 (bits 11-8)
+    PUSHL 0
+    PUSHW 0xFFF8
+    SHIFT
+    PUSHW 0x000F
+    AND
+    CALL1 PrintHexDigit
+    POP
+
+    ; nibble 1 (bits 7-4)
+    PUSHL 0
+    PUSHW 0xFFFC
+    SHIFT
+    PUSHW 0x000F
+    AND
+    CALL1 PrintHexDigit
+    POP
+
+    ; nibble 0 (bits 3-0)
+    PUSHL 0
+    PUSHW 0x000F
+    AND
+    CALL1 PrintHexDigit
+    POP
+
+    RZERO
+.endproc
+
+; Print a single hex digit (0-15) as ASCII '0'-'9' or 'A'-'F'.
+.proc PrintHexDigit locals 1
+    PUSHL 0
+    PUSHW 0x000A
+    SUB
+    JUMPGEZ hex_alpha
+
+    ; digit 0-9: value + 0x30
+    PUSHL 0
+    PUSHW 0x0030
+    ADD
+    PRCHAR
+    RZERO
+
+hex_alpha:
+    ; digit A-F: value + 0x37 (so 10 → 0x41 = 'A')
+    PUSHL 0
+    PUSHW 0x0037
+    ADD
+    PRCHAR
+    RZERO
+.endproc
+
+.proc PrintSpace
+    PUSHB 0x20
+    PRCHAR
+    RZERO
+.endproc
+
+.module Aux
+
+.module_globals 0x0000
+
+.global Counter=0
+
+.export DoubleValue, 0
+.export ReturnFalse, 1
+.export ReturnZero, 2
+.export BumpCounter, 3
+.export PrintManualWorld, 4
+.export FarAdd2, 5
+.export ReturnPair, 6
+
+.proc DoubleValue locals 1
+    PUSHL 0
+    PUSHL 0
+    ADD
+    RETURN
+.endproc
+
+.proc ReturnFalse
+    RFALSE
+.endproc
+
+.proc ReturnZero
+    RZERO
+.endproc
+
+.proc BumpCounter
+    LOADMG Counter
+    PUSH1
+    ADD
+    PUTMG Counter
+    LOADMG Counter
+    RETURN
+.endproc
+
+.proc FarAdd2 locals 2
+    PUSHL 0
+    PUSHL 1
+    ADD
+    RETURN
+.endproc
+
+.proc ReturnPair
+    PUSHW 0x1111
+    PUSHW 0x2222
+    RETN 2
+.endproc
+
+.proc PrintManualWorld
+    PUSHW 0x0006
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    PUSHW MANUAL_WORLD
+    PUSHW MANUAL_WORLD
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+    RZERO
+.endproc
+
+.entry Main.Start

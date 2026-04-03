@@ -1,0 +1,24 @@
+
+
+ Select a command from the menu.  Use arrow keys or type the command.
+                UPDATE      SELECT      VIEW        COLUMN      DETAILED
+    USE         SAVE        REPORT      SORT        PRINT       ALL-DONE
+ VIEW aggregate                   1 Record                       NOT SORTED
+> DATA:        62.50
+               31.00
+              -18.00
+                 .25
+                 .00
+  AVG:        15.15
+  COUNT:     5
+  MAX:        62.50
+  MIN:       -18.00
+  STDEV:        28.44
+  SUM:          75.75
+  VARIANCE:            808.74
+  FIRST:        62.50
+  LAST:          .00
+>
+
+────────────────────────────────────────────────────────────────────────────────
+ File: aggregate              Previous mode: Initial            Files viewed: 1

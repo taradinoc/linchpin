@@ -1,0 +1,24 @@
+
+
+ Select a command from the menu.  Use arrow keys or type the command.
+                UPDATE      SELECT      VIEW        COLUMN      DETAILED
+    USE         SAVE        REPORT      SORT        PRINT       ALL-DONE
+ VIEW math                        1 Record                       NOT SORTED
+> X:        13.62
+  Y:         5.01
+  ABS X:        13.62
+  EXP X:    822414.66
+  INTEGER X:           13
+  LN X:         2.61
+  LOG10 X:         1.13
+  REM X Y:         3.60
+  ROUND X Y:        13.62
+  SQRT X:         3.69
+>
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ File: math                   Previous mode: Initial            Files viewed: 1

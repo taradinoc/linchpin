@@ -422,7 +422,7 @@ internal sealed class InstructionGrammar
 		}
 
 		Stream? resource = typeof(InstructionGrammar).Assembly
-			.GetManifestResourceStream("Linchpin.cornerstone_instruction_grammar.json.gz");
+			.GetManifestResourceStream("Linchpin.instruction_grammar.json.gz");
 		if (resource is null)
 		{
 			throw new LinchpinException("Embedded grammar resource not found.");

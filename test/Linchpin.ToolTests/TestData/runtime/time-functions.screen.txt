@@ -1,0 +1,24 @@
+
+
+ Select a command from the menu.  Use arrow keys or type the command.
+                UPDATE      SELECT      VIEW        COLUMN      DETAILED
+    USE         SAVE        REPORT      SORT        PRINT       ALL-DONE
+ VIEW time                        1 Record                       NOT SORTED
+> T1: 12:01:23 AM
+  T2:  4:20:00 PM
+  X:         5400
+  ADD INTERVAL TIME T1 X:  1:31:23 AM
+  HOURS T1:            0
+  INTERVAL TIME T1 T2:       -58717
+  MINUTES T1:            1
+  SECONDS T1:           23
+>
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ File: time                   Previous mode: Initial            Files viewed: 1

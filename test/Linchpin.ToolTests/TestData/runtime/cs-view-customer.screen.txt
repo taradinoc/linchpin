@@ -1,0 +1,24 @@
+
+
+ Select a command from the menu.  Use arrow keys or type the command.
+                UPDATE      SELECT      VIEW        COLUMN      DETAILED
+    USE         SAVE        REPORT      SORT        PRINT       ALL-DONE
+ VIEW CUSTOMER                    15 Records                     NOT SORTED
+  NAME
+  -----------------------------------
+> Newton Auto Rentals
+  Lange's Motorworld
+  Watertown Car Center
+  Bergman's Antique Autos
+  Medford Motor Service
+  Roman Olds Dealers
+  Tosh's Service Center
+  Roxbury Auto Body and Repair
+  Hal's Foreign Auto Repair
+  Lexington Auto Service
+  Concord Bus Line
+  T Motors
+  Hanover Service Station
+  Bunker Hill Garage
+────────────────────────────────────────────────────────────────────────────────
+ File: CUSTOMER               Previous mode: Initial            Files viewed: 1
