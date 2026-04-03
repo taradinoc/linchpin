@@ -1,0 +1,169 @@
+name: Release Build
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  LLVM_MOS_VERSION: v23.0.0
+  AMIGA_GCC_REF: master
+
+jobs:
+  build-release:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache llvm-mos SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/llvm-mos
+          key: llvm-mos-${{ runner.os }}-${{ env.LLVM_MOS_VERSION }}
+
+      - name: Cache Amiga toolchain
+        id: cache-amiga
+        uses: actions/cache@v4
+        with:
+          path: /opt/amiga
+          key: amiga-gcc-${{ runner.os }}-${{ env.AMIGA_GCC_REF }}-v1
+
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:vriviere/ppa
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf \
+            automake \
+            bison \
+            ca-certificates \
+            cross-mint-essential \
+            curl \
+            flex \
+            gcc \
+            g++ \
+            gettext \
+            git \
+            gperf \
+            libgmp-dev \
+            libmpc-dev \
+            libmpfr-dev \
+            libncurses-dev \
+            libreadline-dev \
+            lhasa \
+            make \
+            patch \
+            perl \
+            python3 \
+            rsync \
+            texinfo \
+            wget
+
+      - name: Install llvm-mos SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -x "$HOME/llvm-mos/bin/mos-c128-clang" ]; then
+            rm -rf "$HOME/llvm-mos"
+            mkdir -p "$HOME/llvm-mos"
+            curl -L --fail --retry 5 \
+              "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/${LLVM_MOS_VERSION}/llvm-mos-linux.tar.xz" \
+              -o /tmp/llvm-mos.tar.xz
+            tar -xJf /tmp/llvm-mos.tar.xz -C "$HOME/llvm-mos"
+          fi
+          echo "$HOME/llvm-mos/bin" >> "$GITHUB_PATH"
+
+      - name: Build Amiga toolchain
+        if: steps.cache-amiga.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /opt/amiga
+          sudo chown "$USER":"$USER" /opt/amiga
+          rm -rf /tmp/m68k-amigaos-gcc
+          git clone https://github.com/AmigaPorts/m68k-amigaos-gcc.git /tmp/m68k-amigaos-gcc
+          make -C /tmp/m68k-amigaos-gcc update
+          make -C /tmp/m68k-amigaos-gcc -j"$(nproc)" PREFIX=/opt/amiga all
+
+      - name: Add Amiga toolchain to PATH
+        shell: bash
+        run: |
+          echo "/opt/amiga/bin" >> "$GITHUB_PATH"
+
+      - name: Publish .NET tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish src/Linchpin/Linchpin.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish/Linchpin
+          dotnet publish src/Chisel/Chisel.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish/Chisel
+          dotnet publish src/LP128Pack/LP128Pack.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish/C128Pack /p:AssemblyName=C128Pack
+
+      - name: Build Atari target
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C src/LinchpinST atari-tos
+
+      - name: Build Amiga target
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C src/LinchpinST amiga
+
+      - name: Build Commodore 128 target
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C src/Linchpin128 c128 \
+            C128_TARGET=bin/linchpin.prg \
+            LAUNCHER_PRG=bin/boot.prg \
+            LAUNCHER_NAME=boot \
+            PROGRAM_NAME=linchpin
+
+      - name: Package release ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/package_release.py \
+            --output-dir artifacts/release \
+            --zip-name "linchpin-${GITHUB_REF_NAME:-${GITHUB_RUN_NUMBER}}.zip" \
+            --bin-input artifacts/publish/Linchpin \
+            --bin-input artifacts/publish/Chisel \
+            --bin-input artifacts/publish/C128Pack \
+            --atari-binary src/LinchpinST/bin/LINCHST.TTP \
+            --amiga-binary src/LinchpinST/bin/CORNER \
+            --c128-boot src/Linchpin128/bin/boot.prg \
+            --c128-program src/Linchpin128/bin/linchpin.prg \
+            --sample-dir src/Chisel/examples \
+            --license-file LICENSE
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linchpin-release-zip
+          path: artifacts/release/*.zip
+          if-no-files-found: error
+
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/release/*.zip
