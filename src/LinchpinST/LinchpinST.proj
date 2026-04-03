@@ -1,0 +1,22 @@
+<Project DefaultTargets="Build">
+
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
+  </PropertyGroup>
+
+  <Target Name="Build">
+    <Exec Command="wsl make clean" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="wsl make" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
+  <Target Name="Rebuild">
+    <Exec Command="wsl make clean" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="wsl make" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
+  <Target Name="Clean">
+    <Exec Command="wsl make clean" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
+</Project>

@@ -1,0 +1,58 @@
+; Minimal Hello World for the experimental Cornerstone assembler.
+
+.global MESSAGE1=MESSAGE1, MESSAGE2=MESSAGE2
+
+MESSAGE1::
+.string "Nice to meet you, where you been?"
+
+MESSAGE2::
+.string "I could show you incredible things."
+
+.module Main
+
+.export Start, 0
+
+.proc Start
+    ; Clear screen
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+    ; Move cursor to 0, 0
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    ; Print line 1
+    PUSHW MESSAGE1
+    PUSHW MESSAGE1
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    ; Move cursor to 1, 0
+    PUSH1
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    ; Print line 2
+    PUSHW MESSAGE2
+    PUSHW MESSAGE2
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    ; Wait for keypress
+wait_key:
+    KBINPUT
+    JUMPF wait_key
+
+    ; Quit MME
+    HALT 1
+.endproc
+
+.entry Main.Start

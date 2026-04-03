@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Chisel/Chisel.csproj" />
     <Project Path="src/Linchpin/Linchpin.csproj" />
+    <Project Path="src/LinchpinST/LinchpinST.proj" />
   </Folder>
 </Solution>

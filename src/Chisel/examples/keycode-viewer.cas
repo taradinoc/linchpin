@@ -1,0 +1,188 @@
+; Read keys with KBINPUT and print their scan codes in hex.
+; If a key arrives as ESC-prefixed, print both bytes on one line.
+; If two ESC bytes arrive in a row, treat that as Escape and halt.
+
+TITLE::
+.string "Key code viewer"
+
+HELP1::
+.string "Press keys to see KBINPUT bytes."
+
+HELP2::
+.string "ESC-prefixed keys print both bytes; ESC ESC exits."
+
+.module Main
+
+.export Start, 0
+
+.proc Start locals 3
+    ; Clear from the home position.
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+    ; Header line.
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    PUSHW TITLE
+    PUSHW TITLE
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    ; Help line 1.
+    PUSH1
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    PUSHW HELP1
+    PUSHW HELP1
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    ; Help line 2.
+    PUSH2
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    PUSHW HELP2
+    PUSHW HELP2
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    ; Output starts on row 4.
+    PUSH4
+    PUT_L0
+
+read_key:
+    KBINPUT
+    STORE_L1
+    JUMPF read_key
+
+    PUSHB 0x1B
+    PUSH_L1
+    JUMPEQ read_escape
+
+    PUSH_L0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    PUSH_L1
+    CALL1 PrintHexByte
+    PUSH_L0
+    CALL1 AdvanceRow
+    PUT_L0
+    JUMP read_key
+
+read_escape:
+escape_key:
+    KBINPUT
+    STORE_L2
+    JUMPF escape_key
+
+    PUSHB 0x1B
+    PUSH_L2
+    JUMPEQ exit_program
+
+    PUSH_L0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    PUSH_L1
+    CALL1 PrintHexByte
+    PUSHB 0x20
+    PRCHAR
+    PUSH_L2
+    CALL1 PrintHexByte
+    PUSH_L0
+    CALL1 AdvanceRow
+    PUT_L0
+    JUMP read_key
+
+exit_program:
+    HALT 1
+.endproc
+
+.proc AdvanceRow locals 1
+    PUSH_L0
+    PUSH1
+    ADD
+    PUT_L0
+
+    ; Wrap and clear the output area when we reach the bottom row.
+    PUSH_L0
+    PUSHW 0x0018
+    SUB
+    JUMPLZ advance_done
+
+    PUSH4
+    PUT_L0
+    PUSH4
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+advance_done:
+    PUSH_L0
+    RETURN
+.endproc
+
+.proc PrintHexByte locals 3
+    PUSH0
+    PUT_L1
+
+    PUSH_L0
+    PUT_L2
+
+high_nibble_loop:
+    PUSH_L2
+    PUSHW 0x0010
+    SUB
+    JUMPLZ print_nibbles
+
+    PUSH_L2
+    PUSHW 0x0010
+    SUB
+    PUT_L2
+    PUSH_L1
+    PUSH1
+    ADD
+    PUT_L1
+    JUMP high_nibble_loop
+
+print_nibbles:
+    PUSH_L1
+    CALL1 PrintHexNibble
+    PUSH_L2
+    CALL1 PrintHexNibble
+    RET
+.endproc
+
+.proc PrintHexNibble locals 1
+    PUSH_L0
+    PUSHW 0x000A
+    SUB
+    JUMPLZ decimal_nibble
+
+    PUSH_L0
+    PUSHW 0x0037
+    ADD
+    PRCHAR
+    RET
+
+decimal_nibble:
+    PUSH_L0
+    PUSHB 0x30
+    ADD
+    PRCHAR
+    RET
+.endproc
+
+.entry Main.Start

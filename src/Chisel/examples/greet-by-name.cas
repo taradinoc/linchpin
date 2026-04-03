@@ -1,0 +1,689 @@
+; Prompt for names in a loop using KBINPUT, keep a fixed status line at the
+; top, and scroll the body region like a simple console.
+
+PROMPT::
+.string "What is your name? "
+
+GREETING::
+.string "I've got a blank space, baby, and I'll write "
+
+STATUS_PREFIX::
+.string "Iterations: "
+
+BLANKS::
+.string "                        "
+
+.module Main
+
+.export Start, 0
+
+.proc Start locals 7
+    ; Clear from the home position.
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+    ; Allocate 13 words: one length word plus 24 payload bytes.
+    PUSHW 0x000D
+    VALLOC
+    DUP
+    PUSH0
+    VPUTW_ 0
+    PUT_L0
+
+    ; Prompting starts on the second screen row. The status line stays on row 0.
+    PUSH1
+    PUT_L5
+    PUSH0
+    PUT_L6
+
+    ; Constrain scroll operations to the body region so the status line stays fixed.
+    ; XDISP uses 0xC5 as top row and 0xC4 as bottom row.
+    PUSH1
+    PUTMG 0xC5
+    PUSHW 0x0017
+    PUTMG 0xC4
+
+    PUSH_L6
+    CALL1 RenderStatus
+
+    PUSH0
+    PUT_L3
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+
+read_key:
+    KBINPUT
+    STORE_L1
+    JUMPF read_key
+
+    ; Enter finishes input without echoing the CR.
+    PUSHB 0x0D
+    PUSH_L1
+    JUMPEQ input_done
+
+    ; Arrow keys arrive as ESC followed by a second byte.
+    PUSHB 0x1B
+    PUSH_L1
+    JUMPEQ read_escape
+
+    PUSH0
+    PUSH_L1
+    JUMPEQ read_key
+
+    ; Keep the current payload length in L2 for editing decisions.
+    PUSH_L0
+    VLOADW_ 0
+    PUT_L2
+
+    ; Backspace erases the previous character if one exists.
+    PUSHB 0x08
+    PUSH_L1
+    JUMPEQ erase_char
+
+    ; Ctrl+Backspace arrives as a direct 7F and deletes to the beginning.
+    PUSHB 0x7F
+    PUSH_L1
+    JUMPEQ erase_to_start
+
+    ; Refuse to write past the 24-byte payload.
+    PUSHW 0x0018
+    PUSH_L2
+    JUMPEQ read_key
+
+    ; Insert in the middle by shifting the tail one byte to the right.
+    PUSH_L2
+    PUSH_L3
+    JUMPEQ store_char
+
+    PUSH_L0
+    PUSH_L2
+    PUSH_L3
+    SUB
+    PUSH_L0
+    PUSH_L3
+    PUSH_L3
+    PUSH1
+    ADD
+    VECCPYB
+    POP
+
+store_char:
+    ; buffer[cursor] = key
+    PUSH_L0
+    PUSH_L3
+    PUSH1
+    ADD
+    PUSH_L1
+    VPUTB
+
+    PUSH_L2
+    PUSH1
+    ADD
+    PUT_L2
+
+    ; buffer[0] = length + 1
+    PUSH_L0
+    PUSH_L2
+    VPUTW_ 0
+
+    PUSH_L3
+    PUSH1
+    ADD
+    PUT_L3
+
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+    JUMP read_key
+
+read_escape:
+escape_key:
+    KBINPUT
+    STORE_L1
+    JUMPF escape_key
+
+    PUSH_L0
+    VLOADW_ 0
+    PUT_L2
+
+    ; Left arrow.
+    PUSHB 0x4B
+    PUSH_L1
+    JUMPEQ arrow_left
+
+    ; Right arrow.
+    PUSHB 0x4D
+    PUSH_L1
+    JUMPEQ arrow_right
+
+    ; Up arrow moves to the start of the line.
+    PUSHB 0x48
+    PUSH_L1
+    JUMPEQ arrow_home
+
+    ; HOME uses the same behavior as Up in this single-line editor.
+    PUSHB 0x47
+    PUSH_L1
+    JUMPEQ arrow_home
+
+    ; Down arrow moves to the end of the line.
+    PUSHB 0x50
+    PUSH_L1
+    JUMPEQ arrow_end
+
+    ; END uses the same behavior as Down in this single-line editor.
+    PUSHB 0x4F
+    PUSH_L1
+    JUMPEQ arrow_end
+
+    ; DEL arrives as ESC 53 on the PC interpreter.
+    PUSHB 0x53
+    PUSH_L1
+    JUMPEQ delete_char
+
+    ; Ctrl+DEL deletes from the cursor through the end of the line.
+    PUSHB 0x93
+    PUSH_L1
+    JUMPEQ delete_to_end
+
+    JUMP read_key
+
+arrow_home:
+    PUSH0
+    PUT_L3
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+    JUMP read_key
+
+arrow_end:
+    PUSH_L2
+    PUT_L3
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+    JUMP read_key
+
+arrow_left:
+    PUSH_L3
+    JUMPZ read_key
+
+    PUSH_L3
+    PUSH1
+    SUB
+    PUT_L3
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+    JUMP read_key
+
+arrow_right:
+    PUSH_L2
+    PUSH_L3
+    JUMPEQ read_key
+
+    PUSH_L3
+    PUSH1
+    ADD
+    PUT_L3
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+    JUMP read_key
+
+erase_char:
+    PUSH_L3
+    JUMPZ read_key
+
+    ; New cursor position after deleting the character to the left.
+    PUSH_L3
+    PUSH1
+    SUB
+    PUT_L4
+
+    ; If deleting from the middle, shift the tail one byte left.
+    PUSH_L2
+    PUSH_L3
+    JUMPEQ shrink_buffer
+
+    PUSH_L0
+    PUSH_L2
+    PUSH_L3
+    SUB
+    PUSH_L0
+    PUSH_L3
+    PUSH_L4
+    VECCPYB
+    POP
+
+shrink_buffer:
+    PUSH_L2
+    PUSH1
+    SUB
+    PUT_L2
+
+    PUSH_L0
+    PUSH_L2
+    VPUTW_ 0
+
+    PUSH_L4
+    PUT_L3
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+    JUMP read_key
+
+erase_to_start:
+    PUSH_L3
+    JUMPZ read_key
+
+    ; If the cursor is not already at the end, shift the remaining tail left.
+    PUSH_L2
+    PUSH_L3
+    JUMPEQ clear_prefix
+
+    PUSH_L0
+    PUSH_L2
+    PUSH_L3
+    SUB
+    PUSH_L0
+    PUSH_L3
+    PUSH0
+    VECCPYB
+    POP
+
+clear_prefix:
+    PUSH_L2
+    PUSH_L3
+    SUB
+    PUT_L2
+
+    PUSH_L0
+    PUSH_L2
+    VPUTW_ 0
+
+    PUSH0
+    PUT_L3
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+    JUMP read_key
+
+delete_char:
+    ; Deleting under the cursor keeps the cursor in place.
+    PUSH_L2
+    PUSH_L3
+    JUMPEQ read_key
+
+    ; If not deleting the last character, shift the tail one byte left.
+    PUSH_L2
+    PUSH_L3
+    PUSH1
+    ADD
+    JUMPEQ shorten_buffer
+
+    PUSH_L0
+    PUSH_L2
+    PUSH_L3
+    SUB
+    PUSH1
+    SUB
+    PUSH_L0
+    PUSH_L3
+    PUSH1
+    ADD
+    PUSH_L3
+    VECCPYB
+    POP
+
+shorten_buffer:
+    PUSH_L2
+    PUSH1
+    SUB
+    PUT_L2
+
+    PUSH_L0
+    PUSH_L2
+    VPUTW_ 0
+
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+    JUMP read_key
+
+delete_to_end:
+    ; Deleting to the end keeps the prefix before the cursor unchanged.
+    PUSH_L2
+    PUSH_L3
+    JUMPEQ read_key
+
+    PUSH_L3
+    PUT_L2
+
+    PUSH_L0
+    PUSH_L2
+    VPUTW_ 0
+
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+    JUMP read_key
+
+input_done:
+    PUSH_L0
+    VLOADW_ 0
+    PUT_L2
+
+    PUSH_L2
+    JUMPZ exit_program
+
+    PUSH_L5
+    CALL1 AdvanceLine
+    PUT_L5
+
+    PUSH_L0
+    PUSH_L5
+    CALL2 PrintGreeting
+
+    PUSH_L6
+    PUSH1
+    ADD
+    PUT_L6
+
+    PUSH_L6
+    CALL1 RenderStatus
+
+    PUSH_L5
+    CALL1 AdvanceLine
+    PUT_L5
+
+    PUSH0
+    PUT_L3
+    PUSH_L0
+    PUSH0
+    VPUTW_ 0
+    PUSH_L0
+    PUSH_L3
+    PUSH_L5
+    CALL3 RenderInput
+    JUMP read_key
+
+exit_program:
+    PUSH_L0
+    PUSHW 0x000D
+    VFREE
+
+    HALT 1
+.endproc
+
+.proc RenderInput locals 3
+    ; Draw the prompt and current buffer contents, clear the rest of the field,
+    ; then place the cursor back at the requested logical position.
+    PUSH_L2
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    PUSHW PROMPT
+    PUSHW PROMPT
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSH_L2
+    PUTMG 0xCA
+    PUSHB 0x13
+    PUTMG 0xC9
+
+    PUSH_L0
+    PUSH_L0
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSHW BLANKS
+    PUSHW BLANKS
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSH_L2
+    PUTMG 0xCA
+    PUSHB 0x13
+    PUSH_L1
+    ADD
+    PUTMG 0xC9
+    RET
+.endproc
+
+.proc RenderStatus locals 1
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    PUSHW STATUS_PREFIX
+    PUSHW STATUS_PREFIX
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSH_L0
+    CALL1 PrintWordDecimal
+
+    PUSHW BLANKS
+    PUSHW BLANKS
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+    RET
+.endproc
+
+.proc AdvanceLine locals 1
+    PUSH_L0
+    PUSHW 0x0017
+    SUB
+    JUMPLZ advance_without_scroll
+
+    ; Scroll rows 1..bottom upward by one line, leaving row 0 fixed.
+    PUSHW 0x0017
+    PUTMG 0xC4
+    PUSH1
+    PUTMG 0xC5
+    PUSH1
+    XDISP 0x04
+
+    PUSHW 0x0017
+    RETURN
+
+advance_without_scroll:
+    PUSH_L0
+    PUSH1
+    ADD
+    RETURN
+.endproc
+
+.proc PrintGreeting locals 2
+    PUSH_L1
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    PUSHW GREETING
+    PUSHW GREETING
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSH_L0
+    PUSH_L0
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSHB 0x2E
+    PRCHAR
+    RET
+.endproc
+
+.proc PrintWordDecimal locals 3
+    PUSH0
+    PUT_L1
+
+    PUSH0
+    PUT_L2
+
+count_10000:
+    PUSH_L0
+    PUSHW 0x2710
+    SUB
+    JUMPLZ emit_10000
+
+    PUSH_L0
+    PUSHW 0x2710
+    SUB
+    PUT_L0
+
+    PUSH_L2
+    PUSH1
+    ADD
+    PUT_L2
+    JUMP count_10000
+
+emit_10000:
+    PUSH_L2
+    JUMPZ maybe_1000
+
+    PUSH_L2
+    PUSHB 0x30
+    ADD
+    PRCHAR
+    PUSH1
+    PUT_L1
+
+maybe_1000:
+    PUSH0
+    PUT_L2
+
+count_1000:
+    PUSH_L0
+    PUSHW 0x03E8
+    SUB
+    JUMPLZ emit_1000
+
+    PUSH_L0
+    PUSHW 0x03E8
+    SUB
+    PUT_L0
+
+    PUSH_L2
+    PUSH1
+    ADD
+    PUT_L2
+    JUMP count_1000
+
+emit_1000:
+    PUSH_L2
+    JUMPNZ print_1000
+    PUSH_L1
+    JUMPZ maybe_100
+
+print_1000:
+    PUSH_L2
+    PUSHB 0x30
+    ADD
+    PRCHAR
+    PUSH1
+    PUT_L1
+
+maybe_100:
+    PUSH0
+    PUT_L2
+
+count_100:
+    PUSH_L0
+    PUSHW 0x0064
+    SUB
+    JUMPLZ emit_100
+
+    PUSH_L0
+    PUSHW 0x0064
+    SUB
+    PUT_L0
+
+    PUSH_L2
+    PUSH1
+    ADD
+    PUT_L2
+    JUMP count_100
+
+emit_100:
+    PUSH_L2
+    JUMPNZ print_100
+    PUSH_L1
+    JUMPZ maybe_10
+
+print_100:
+    PUSH_L2
+    PUSHB 0x30
+    ADD
+    PRCHAR
+    PUSH1
+    PUT_L1
+
+maybe_10:
+    PUSH0
+    PUT_L2
+
+count_10:
+    PUSH_L0
+    PUSHW 0x000A
+    SUB
+    JUMPLZ emit_10
+
+    PUSH_L0
+    PUSHW 0x000A
+    SUB
+    PUT_L0
+
+    PUSH_L2
+    PUSH1
+    ADD
+    PUT_L2
+    JUMP count_10
+
+emit_10:
+    PUSH_L2
+    JUMPNZ print_10
+    PUSH_L1
+    JUMPZ print_1
+
+print_10:
+    PUSH_L2
+    PUSHB 0x30
+    ADD
+    PRCHAR
+
+print_1:
+    PUSH_L0
+    PUSHB 0x30
+    ADD
+    PRCHAR
+    RET
+.endproc
+
+.entry Main.Start
