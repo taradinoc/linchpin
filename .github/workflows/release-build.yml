@@ -105,8 +105,8 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: linchpin-release-zip
-          path: artifacts/release/*.zip
+          name: linchpin-release
+          path: artifacts/release/staging
           if-no-files-found: error
 
       - name: Upload release asset
