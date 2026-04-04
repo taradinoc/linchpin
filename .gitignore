@@ -55,3 +55,6 @@ nunit-*.xml
 
 # Cornerstone
 Cornerstone/
+
+# Python
+__pycache__
