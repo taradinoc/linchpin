@@ -75,14 +75,20 @@ jobs:
             LAUNCHER_PRG=bin/boot.prg \
             LAUNCHER_NAME=boot \
             PROGRAM_NAME=linchpin
+          make -C src/Linchpin128 bin/boot.prg \
+            MOS_C128_CLANG="$mos_c128_clang" \
+            C128_TARGET=bin/linchpin.prg \
+            LAUNCHER_PRG=bin/boot.prg \
+            LAUNCHER_NAME=boot \
+            PROGRAM_NAME=linchpin
+          mkdir -p artifacts/native/c128
+          cp src/Linchpin128/bin/boot.prg artifacts/native/c128/boot.prg
+          cp src/Linchpin128/bin/linchpin.prg artifacts/native/c128/linchpin.prg
 
       - name: Package release ZIP
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/native/c128
-          cp src/Linchpin128/bin/boot.prg artifacts/native/c128/boot.prg
-          cp src/Linchpin128/bin/linchpin.prg artifacts/native/c128/linchpin.prg
           python3 scripts/package_release.py \
             --output-dir artifacts/release \
             --zip-name "linchpin-${GITHUB_REF_NAME:-${GITHUB_RUN_NUMBER}}.zip" \
