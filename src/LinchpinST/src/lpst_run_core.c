@@ -478,204 +478,6 @@ void record_recent_word_event(
     }
 }
 
-void record_recent_p201_event(lpst_exec_state *state, uint16_t instruction_start)
-{
-    lpst_recent_p201_event *event;
-    uint16_t slot;
-
-    slot = state->recent_p201_next;
-    event = &state->recent_p201[slot];
-    event->pc = instruction_start;
-    event->l0 = state->current_frame.local_count > 0 ? state->local_storage[0] : LPST_FALSE_SENTINEL;
-    event->l1 = state->current_frame.local_count > 1 ? state->local_storage[1] : LPST_FALSE_SENTINEL;
-    event->l2 = state->current_frame.local_count > 2 ? state->local_storage[2] : LPST_FALSE_SENTINEL;
-    event->l3 = state->current_frame.local_count > 3 ? state->local_storage[3] : LPST_FALSE_SENTINEL;
-    event->l4 = state->current_frame.local_count > 4 ? state->local_storage[4] : LPST_FALSE_SENTINEL;
-
-    state->recent_p201_next = (uint16_t)((slot + 1u) % LPST_RECENT_P201_EVENTS);
-    if (state->recent_p201_count < LPST_RECENT_P201_EVENTS) {
-        state->recent_p201_count++;
-    }
-}
-
-void record_m5p128_trace_event(lpst_exec_state *state, uint16_t instruction_start)
-{
-    lpst_m5p128_trace_event *event;
-    uint16_t slot;
-
-    if (state->current_module_id != 5) {
-        return;
-    }
-    if (instruction_start < 0x3D97u || instruction_start >= 0x3DA2u) {
-        return;
-    }
-
-    slot = state->m5p128_trace_next;
-    event = &state->m5p128_trace[slot];
-    event->pc = instruction_start;
-    event->stk_depth = state->eval_stack_top;
-    event->stk0 = state->eval_stack_top > 0
-        ? state->eval_stack[state->eval_stack_top - 1] : 0;
-    event->stk1 = state->eval_stack_top > 1
-        ? state->eval_stack[state->eval_stack_top - 2] : 0;
-    event->l8 = state->current_frame.local_count > 8 ? state->local_storage[8] : LPST_FALSE_SENTINEL;
-    event->l9 = state->current_frame.local_count > 9 ? state->local_storage[9] : LPST_FALSE_SENTINEL;
-
-    state->m5p128_trace_next = (uint16_t)((slot + 1u) % LPST_M5P128_TRACE_EVENTS);
-    if (state->m5p128_trace_count < LPST_M5P128_TRACE_EVENTS) {
-        state->m5p128_trace_count++;
-    }
-}
-
-void record_recent_m8_priv0f28_event(lpst_exec_state *state, uint16_t caller_pc, const uint16_t *args, uint8_t argc)
-{
-    lpst_recent_m8_priv0f28_event *event;
-    uint16_t slot;
-
-    slot = state->recent_m8_priv0f28_next;
-    event = &state->recent_m8_priv0f28[slot];
-    event->caller_module_id = state->current_module_id;
-    event->caller_procedure_index = (uint16_t)state->current_frame.procedure_index;
-    event->caller_pc = caller_pc;
-    event->arg0 = argc > 0 ? args[0] : LPST_FALSE_SENTINEL;
-    event->arg1 = argc > 1 ? args[1] : LPST_FALSE_SENTINEL;
-    event->arg2 = argc > 2 ? args[2] : LPST_FALSE_SENTINEL;
-    event->arg3 = argc > 3 ? args[3] : LPST_FALSE_SENTINEL;
-    event->arg4 = argc > 4 ? args[4] : LPST_FALSE_SENTINEL;
-    event->arg5 = argc > 5 ? args[5] : LPST_FALSE_SENTINEL;
-
-    state->recent_m8_priv0f28_next = (uint16_t)((slot + 1u) % LPST_RECENT_M8_PRIV0F28_EVENTS);
-    if (state->recent_m8_priv0f28_count < LPST_RECENT_M8_PRIV0F28_EVENTS) {
-        state->recent_m8_priv0f28_count++;
-    }
-}
-
-static uint16_t load_module_global_for_module(const lpst_exec_state *state, uint16_t module_id, uint8_t index)
-{
-    if (module_id >= 1 && module_id <= state->module_count) {
-        uint16_t module_index = (uint16_t)(module_id - 1);
-        uint16_t count = state->module_global_counts[module_index];
-
-        if (index < count) {
-            return state->module_globals[module_index][index];
-        }
-    }
-
-    return state->system_module_globals[index];
-}
-
-void record_recent_m1_startup_event(lpst_exec_state *state, uint16_t instruction_start, uint8_t opcode)
-{
-    lpst_recent_m1_startup_event *event;
-    uint16_t slot;
-
-    if (state->current_module_id != 1) {
-        return;
-    }
-
-    if (state->current_frame.procedure_index != 2 && state->current_frame.procedure_index != 7) {
-        return;
-    }
-
-    slot = state->recent_m1_startup_next;
-    event = &state->recent_m1_startup[slot];
-    event->procedure_index = (uint16_t)state->current_frame.procedure_index;
-    event->pc = instruction_start;
-    event->opcode = opcode;
-    event->g0 = state->program_global_count > 0 ? state->program_globals[0] : LPST_FALSE_SENTINEL;
-    event->g1 = state->program_global_count > 1 ? state->program_globals[1] : LPST_FALSE_SENTINEL;
-    event->m1g0 = load_module_global_for_module(state, 1, 0);
-    event->m8g59 = load_module_global_for_module(state, 8, 0x59);
-
-    state->recent_m1_startup_next = (uint16_t)((slot + 1u) % LPST_RECENT_M1_STARTUP_EVENTS);
-    if (state->recent_m1_startup_count < LPST_RECENT_M1_STARTUP_EVENTS) {
-        state->recent_m1_startup_count++;
-    }
-}
-
-static void print_recent_m1_startup_events(const lpst_exec_state *state, FILE *stream)
-{
-    uint16_t i;
-
-    fprintf(stream, "[HALTDBG] recent M1 startup count=%u [", state->recent_m1_startup_count);
-    for (i = 0; i < state->recent_m1_startup_count; i++) {
-        uint16_t slot = (uint16_t)((state->recent_m1_startup_next + LPST_RECENT_M1_STARTUP_EVENTS
-            - state->recent_m1_startup_count + i) % LPST_RECENT_M1_STARTUP_EVENTS);
-        const lpst_recent_m1_startup_event *event = &state->recent_m1_startup[slot];
-
-        if (i > 0) {
-            fprintf(stream, ", ");
-        }
-
-        fprintf(stream,
-            "{p%u pc=0x%04X op=0x%02X G0=0x%04X G1=0x%04X M1G0=0x%04X M8G59=0x%04X}",
-            event->procedure_index,
-            event->pc,
-            event->opcode,
-            event->g0,
-            event->g1,
-            event->m1g0,
-            event->m8g59);
-    }
-    fprintf(stream, "]\n");
-}
-
-void record_recent_m1_proc2_entry_event(
-    lpst_exec_state *state,
-    uint16_t source_kind,
-    uint16_t source_module_id,
-    uint16_t source_procedure_index,
-    uint16_t source_pc,
-    uint16_t selector_or_token,
-    uint16_t target_pc)
-{
-    lpst_recent_m1_proc2_entry_event *event;
-    uint16_t slot;
-
-    slot = state->recent_m1_proc2_entries_next;
-    event = &state->recent_m1_proc2_entries[slot];
-    event->source_kind = source_kind;
-    event->source_module_id = source_module_id;
-    event->source_procedure_index = source_procedure_index;
-    event->source_pc = source_pc;
-    event->selector_or_token = selector_or_token;
-    event->target_pc = target_pc;
-
-    state->recent_m1_proc2_entries_next = (uint16_t)((slot + 1u) % LPST_RECENT_M1_PROC2_ENTRY_EVENTS);
-    if (state->recent_m1_proc2_entries_count < LPST_RECENT_M1_PROC2_ENTRY_EVENTS) {
-        state->recent_m1_proc2_entries_count++;
-    }
-}
-
-void record_recent_m2_proc166_return_event(
-    lpst_exec_state *state,
-    uint16_t caller_module_id,
-    uint16_t caller_procedure_index,
-    uint16_t caller_pc,
-    uint16_t result)
-{
-    lpst_recent_m2_proc166_return_event *event;
-    uint16_t slot;
-
-    slot = state->recent_m2_proc166_returns_next;
-    event = &state->recent_m2_proc166_returns[slot];
-    event->caller_module_id = caller_module_id;
-    event->caller_procedure_index = caller_procedure_index;
-    event->caller_pc = caller_pc;
-    event->result = result;
-    event->l0 = state->current_frame.local_count > 0 ? state->local_storage[0] : LPST_FALSE_SENTINEL;
-    event->l1 = state->current_frame.local_count > 1 ? state->local_storage[1] : LPST_FALSE_SENTINEL;
-    event->l2 = state->current_frame.local_count > 2 ? state->local_storage[2] : LPST_FALSE_SENTINEL;
-    event->l3 = state->current_frame.local_count > 3 ? state->local_storage[3] : LPST_FALSE_SENTINEL;
-    event->l4 = state->current_frame.local_count > 4 ? state->local_storage[4] : LPST_FALSE_SENTINEL;
-
-    state->recent_m2_proc166_returns_next =
-        (uint16_t)((slot + 1u) % LPST_RECENT_M2_PROC166_RETURN_EVENTS);
-    if (state->recent_m2_proc166_returns_count < LPST_RECENT_M2_PROC166_RETURN_EVENTS) {
-        state->recent_m2_proc166_returns_count++;
-    }
-}
-
 void record_recent_open_event(
     lpst_exec_state *state,
     uint16_t result,
@@ -700,70 +502,6 @@ void record_recent_open_event(
     if (state->recent_open_events_count < LPST_RECENT_OPEN_EVENTS) {
         state->recent_open_events_count++;
     }
-}
-
-static void print_recent_m1_proc2_entry_events(const lpst_exec_state *state, FILE *stream)
-{
-    uint16_t i;
-
-    fprintf(stream, "[HALTDBG] recent M1:p2 entries count=%u [", state->recent_m1_proc2_entries_count);
-    for (i = 0; i < state->recent_m1_proc2_entries_count; i++) {
-        uint16_t slot = (uint16_t)((state->recent_m1_proc2_entries_next + LPST_RECENT_M1_PROC2_ENTRY_EVENTS
-            - state->recent_m1_proc2_entries_count + i) % LPST_RECENT_M1_PROC2_ENTRY_EVENTS);
-        const lpst_recent_m1_proc2_entry_event *event = &state->recent_m1_proc2_entries[slot];
-        const char *kind = "?";
-
-        if (i > 0) {
-            fprintf(stream, ", ");
-        }
-
-        if (event->source_kind == 1) {
-            kind = "CALLF";
-        } else if (event->source_kind == 2) {
-            kind = "LONGJMP";
-        } else if (event->source_kind == 3) {
-            kind = "LONGJMPR";
-        }
-
-        fprintf(stream,
-            "{%s from=m%u:p%u pc=0x%04X key=0x%04X target=0x%04X}",
-            kind,
-            event->source_module_id,
-            event->source_procedure_index,
-            event->source_pc,
-            event->selector_or_token,
-            event->target_pc);
-    }
-    fprintf(stream, "]\n");
-}
-
-static void print_recent_m2_proc166_return_events(const lpst_exec_state *state, FILE *stream)
-{
-    uint16_t i;
-
-    fprintf(stream, "[HALTDBG] recent M2:p166 returns count=%u [", state->recent_m2_proc166_returns_count);
-    for (i = 0; i < state->recent_m2_proc166_returns_count; i++) {
-        uint16_t slot = (uint16_t)((state->recent_m2_proc166_returns_next + LPST_RECENT_M2_PROC166_RETURN_EVENTS
-            - state->recent_m2_proc166_returns_count + i) % LPST_RECENT_M2_PROC166_RETURN_EVENTS);
-        const lpst_recent_m2_proc166_return_event *event = &state->recent_m2_proc166_returns[slot];
-
-        if (i > 0) {
-            fprintf(stream, ", ");
-        }
-
-        fprintf(stream,
-            "{to=m%u:p%u pc=0x%04X result=0x%04X L0=0x%04X L1=0x%04X L2=0x%04X L3=0x%04X L4=0x%04X}",
-            event->caller_module_id,
-            event->caller_procedure_index,
-            event->caller_pc,
-            event->result,
-            event->l0,
-            event->l1,
-            event->l2,
-            event->l3,
-            event->l4);
-    }
-    fprintf(stream, "]\n");
 }
 
 static void print_recent_open_events(const lpst_exec_state *state, FILE *stream)
@@ -811,35 +549,6 @@ static void print_recent_open_events(const lpst_exec_state *state, FILE *stream)
     fprintf(stream, "]\n");
 }
 
-static void print_recent_m8_priv0f28_events(const lpst_exec_state *state, FILE *stream)
-{
-    uint16_t i;
-
-    fprintf(stream, "[HALTDBG] recent M8:priv_0F28 count=%u [", state->recent_m8_priv0f28_count);
-    for (i = 0; i < state->recent_m8_priv0f28_count; i++) {
-        uint16_t si = (uint16_t)((state->recent_m8_priv0f28_next + LPST_RECENT_M8_PRIV0F28_EVENTS
-            - state->recent_m8_priv0f28_count + i) % LPST_RECENT_M8_PRIV0F28_EVENTS);
-        const lpst_recent_m8_priv0f28_event *event = &state->recent_m8_priv0f28[si];
-
-        if (i > 0) {
-            fprintf(stream, ", ");
-        }
-
-        fprintf(stream,
-            "{m%u:p%u pc=0x%04X args=[0x%04X 0x%04X 0x%04X 0x%04X 0x%04X 0x%04X]}",
-            event->caller_module_id,
-            event->caller_procedure_index,
-            event->caller_pc,
-            event->arg0,
-            event->arg1,
-            event->arg2,
-            event->arg3,
-            event->arg4,
-            event->arg5);
-    }
-    fprintf(stream, "]\n");
-}
-
 static void print_recent_word_events(
     FILE *stream,
     const char *label,
@@ -867,32 +576,6 @@ static void print_recent_word_events(
     fprintf(stream, "]\n");
 }
 
-static void print_recent_p201_events(const lpst_exec_state *state, FILE *stream)
-{
-    uint16_t i;
-
-    fprintf(stream, "[HALTDBG] recent M2:P201 count=%u [", state->recent_p201_count);
-    for (i = 0; i < state->recent_p201_count; i++) {
-        uint16_t slot = (uint16_t)((state->recent_p201_next + LPST_RECENT_P201_EVENTS
-            - state->recent_p201_count + i) % LPST_RECENT_P201_EVENTS);
-        const lpst_recent_p201_event *event = &state->recent_p201[slot];
-
-        if (i > 0) {
-            fprintf(stream, ", ");
-        }
-
-        fprintf(stream,
-            "pc=0x%04X[L0=0x%04X L1=0x%04X L2=0x%04X L3=0x%04X L4=0x%04X]",
-            event->pc,
-            event->l0,
-            event->l1,
-            event->l2,
-            event->l3,
-            event->l4);
-    }
-    fprintf(stream, "]\n");
-}
-
 void lpst_trace_halt_context(const lpst_exec_state *state, FILE *stream)
 {
     unsigned local_index;
@@ -904,18 +587,6 @@ void lpst_trace_halt_context(const lpst_exec_state *state, FILE *stream)
         && state->halt_code != 0x0004
         && state->halt_code != 0x0005)) {
         return;
-    }
-
-    if ((state->halt_code == 0x0004 || state->halt_code == 0x0005) && state->current_module_id == 1) {
-        fprintf(stream,
-            "[HALTDBG] startup globals: G0=0x%04X G1=0x%04X M1G0=0x%04X M8G59=0x%04X\n",
-            state->program_global_count > 0 ? state->program_globals[0] : LPST_FALSE_SENTINEL,
-            state->program_global_count > 1 ? state->program_globals[1] : LPST_FALSE_SENTINEL,
-            load_module_global_for_module(state, 1, 0),
-            load_module_global_for_module(state, 8, 0x59));
-        print_recent_m1_startup_events(state, stream);
-        print_recent_m1_proc2_entry_events(state, stream);
-        print_recent_m2_proc166_return_events(state, stream);
     }
 
     print_recent_open_events(state, stream);
@@ -934,8 +605,6 @@ void lpst_trace_halt_context(const lpst_exec_state *state, FILE *stream)
         LPST_RECENT_EXT36_EVENTS,
         state->recent_ext36_next,
         state->recent_ext36_count);
-    print_recent_p201_events(state, stream);
-    print_recent_m8_priv0f28_events(state, stream);
 
     fprintf(stream, "[HALTDBG] eval stack top=%u [", state->eval_stack_top);
     for (stack_index = 0; stack_index < state->eval_stack_top && stack_index < 8; stack_index++) {
@@ -1022,20 +691,6 @@ void lpst_trace_halt_context(const lpst_exec_state *state, FILE *stream)
             }
 
             fprintf(stream, "]\n");
-        }
-    }
-
-    if (state->m5p128_trace_count > 0) {
-        unsigned ti;
-        const uint16_t tc = state->m5p128_trace_count;
-        const uint16_t tn = state->m5p128_trace_next;
-        fprintf(stream, "[M5P128] trace count=%u:\n", tc);
-        for (ti = 0; ti < tc; ti++) {
-            uint16_t si = (uint16_t)((tn + LPST_M5P128_TRACE_EVENTS - tc + ti) % LPST_M5P128_TRACE_EVENTS);
-            const lpst_m5p128_trace_event *ev = &state->m5p128_trace[si];
-            fprintf(stream,
-                "  pc=0x%04X stk_depth=%u stk=[0x%04X, 0x%04X] L8=0x%04X L9=0x%04X\n",
-                ev->pc, ev->stk_depth, ev->stk0, ev->stk1, ev->l8, ev->l9);
         }
     }
 

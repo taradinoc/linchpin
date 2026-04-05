@@ -567,8 +567,7 @@ bool restore_jump_snapshot(
     lpst_exec_state *state,
     uint16_t token,
     bool use_return_target,
-    uint16_t return_value,
-    uint16_t source_pc)
+    uint16_t return_value)
 {
     lpst_jump_snapshot *snapshot = find_jump_snapshot(state, token);
     uint16_t i;
@@ -578,17 +577,6 @@ bool restore_jump_snapshot(
         state->is_halted = true;
         state->halt_code = 0xFFFF;
         return false;
-    }
-
-    if (snapshot->module_id == 1 && snapshot->frame.procedure_index == 2) {
-        record_recent_m1_proc2_entry_event(
-            state,
-            use_return_target ? 3 : 2,
-            state->current_module_id,
-            (uint16_t)state->current_frame.procedure_index,
-            source_pc,
-            token,
-            use_return_target ? snapshot->longjmpr_program_counter : snapshot->longjmp_program_counter);
     }
 
     state->current_module_id = snapshot->module_id;
@@ -764,10 +752,6 @@ bool enter_near_call(
 
     pop_arguments(state, args, argc);
 
-    if (state->current_module_id == 8 && target_offset == 0x0F28u) {
-        record_recent_m8_priv0f28_event(state, return_pc, args, argc);
-    }
-
     if (proc != NULL) {
         fill_cached_proc_header(proc, &priv_header);
         code_offset = proc->code_offset;
@@ -825,17 +809,6 @@ bool enter_far_call(
     }
 
     proc = &target_mod->procedures[proc_index];
-    if (target_module_id == 1 && proc_index == 2) {
-        record_recent_m1_proc2_entry_event(
-            state,
-            1,
-            state->current_module_id,
-            (uint16_t)state->current_frame.procedure_index,
-            return_pc,
-            selector,
-            proc->code_offset);
-    }
-
     {
         lpst_proc_header header;
         fill_cached_proc_header(proc, &header);
@@ -880,18 +853,6 @@ void do_return(lpst_exec_state *state, uint16_t *results, uint16_t result_count)
 
     state->call_stack_top--;
     cont = &state->call_stack[state->call_stack_top];
-
-    if (exiting_module_id == 2
-        && exiting_procedure_index == 166
-        && cont->module_id == 6
-        && cont->procedure_index == 147) {
-        record_recent_m2_proc166_return_event(
-            state,
-            cont->module_id,
-            cont->procedure_index,
-            cont->return_pc,
-            result_count > 0 ? results[0] : LPST_FALSE_SENTINEL);
-    }
 
     state->current_module_id = cont->module_id;
     state->program_counter = cont->return_pc;

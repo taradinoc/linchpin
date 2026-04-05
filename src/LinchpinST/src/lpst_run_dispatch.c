@@ -121,7 +121,7 @@ void dispatch_extended(lpst_exec_state *state)
     {
         uint16_t return_val = lpst_exec_pop(state);
         uint16_t token = lpst_exec_pop(state);
-        restore_jump_snapshot(state, token, true, return_val, ext_pc);
+        restore_jump_snapshot(state, token, true, return_val);
         break;
     }
 
@@ -130,7 +130,7 @@ void dispatch_extended(lpst_exec_state *state)
      * Stack: [token]. */
     {
         uint16_t token = lpst_exec_pop(state);
-        restore_jump_snapshot(state, token, false, 0, ext_pc);
+        restore_jump_snapshot(state, token, false, 0);
         break;
     }
 

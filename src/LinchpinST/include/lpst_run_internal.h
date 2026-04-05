@@ -101,24 +101,6 @@ void record_recent_word_event(
     uint16_t module_id,
     uint16_t pc,
     uint16_t value);
-void record_recent_p201_event(lpst_exec_state *state, uint16_t instruction_start);
-void record_m5p128_trace_event(lpst_exec_state *state, uint16_t instruction_start);
-void record_recent_m8_priv0f28_event(lpst_exec_state *state, uint16_t caller_pc, const uint16_t *args, uint8_t argc);
-void record_recent_m1_startup_event(lpst_exec_state *state, uint16_t instruction_start, uint8_t opcode);
-void record_recent_m1_proc2_entry_event(
-    lpst_exec_state *state,
-    uint16_t source_kind,
-    uint16_t source_module_id,
-    uint16_t source_procedure_index,
-    uint16_t source_pc,
-    uint16_t selector_or_token,
-    uint16_t target_pc);
-void record_recent_m2_proc166_return_event(
-    lpst_exec_state *state,
-    uint16_t caller_module_id,
-    uint16_t caller_procedure_index,
-    uint16_t caller_pc,
-    uint16_t result);
 void record_recent_open_event(
     lpst_exec_state *state,
     uint16_t result,
@@ -225,8 +207,7 @@ bool restore_jump_snapshot(
     lpst_exec_state *state,
     uint16_t token,
     bool use_return_target,
-    uint16_t return_value,
-    uint16_t source_pc);
+    uint16_t return_value);
 
 /* Send a single character to the host after applying display style state. */
 void host_print_char(lpst_exec_state *state, uint8_t ch);

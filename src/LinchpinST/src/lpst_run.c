@@ -13,8 +13,6 @@
  *
  * All other opcodes go through the switch statement below.
  *
- * The trace branches that print specific PC ranges are diagnostic aids for
- * investigating Cornerstone behaviour; they do not affect correctness.
  */
 #include "lpst_run_internal.h"
 
@@ -47,15 +45,6 @@ lpst_result lpst_run(lpst_exec_state *state)
         opcode = fetch_byte(state);
         state->instruction_count++;
 
-        record_recent_m1_startup_event(state, instruction_start, opcode);
-
-        if (state->current_module_id == 2
-            && (instruction_start == 0x04DD || instruction_start == 0x0556)) {
-            record_recent_p201_event(state, instruction_start);
-        }
-
-        record_m5p128_trace_event(state, instruction_start);
-
         if (state->trace_enabled) {
             fprintf(stderr, "[%u] mod=%u pc=0x%04X op=0x%02X stk=%u call=%u top=[",
                     state->instruction_count,
@@ -70,35 +59,6 @@ lpst_result lpst_run(lpst_exec_state *state)
                         state->eval_stack[state->eval_stack_top - 1 - ti]);
             }
             fprintf(stderr, "]\n");
-
-            if ((state->current_module_id == 7 &&
-                 (instruction_start == 0x0334 ||
-                  instruction_start == 0x0183 ||
-                  instruction_start == 0x0192 ||
-                  instruction_start == 0x00CB ||
-                  instruction_start == 0x012A ||
-                  instruction_start == 0x0817 ||
-                  instruction_start == 0x0825))
-                || (state->current_module_id == 4 &&
-                    (instruction_start == 0x05DC ||
-                     instruction_start == 0x05EE ||
-                     instruction_start == 0x0625 ||
-                     instruction_start == 0x0631))
-                || (state->current_module_id == 8 &&
-                    (instruction_start == 0x6A2B ||
-                     instruction_start == 0x6B68 ||
-                     instruction_start == 0x69E3))) {
-                unsigned li;
-
-                fprintf(stderr, "    locals(");
-                for (li = 0; li < state->current_frame.local_count; li++) {
-                    if (li) {
-                        fprintf(stderr, ",");
-                    }
-                    fprintf(stderr, "L%u=0x%04X", li, state->local_storage[li]);
-                }
-                fprintf(stderr, ")\n");
-            }
         }
 
         /* STOREL-peek: store top-of-stack in local[n] without consuming it. */

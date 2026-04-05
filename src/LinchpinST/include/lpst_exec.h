@@ -35,12 +35,6 @@
  * show what the VM was doing in the moments before it stopped. */
 #define LPST_RECENT_INPUT_EVENTS 24
 #define LPST_RECENT_EXT36_EVENTS 24
-#define LPST_RECENT_P201_EVENTS  16
-#define LPST_M5P128_TRACE_EVENTS 32
-#define LPST_RECENT_M8_PRIV0F28_EVENTS 16
-#define LPST_RECENT_M1_STARTUP_EVENTS 24
-#define LPST_RECENT_M1_PROC2_ENTRY_EVENTS 16
-#define LPST_RECENT_M2_PROC166_RETURN_EVENTS 16
 #define LPST_RECENT_OPEN_EVENTS 8
 
 /* One entry in the bytecode page cache (LRU eviction policy). */
@@ -101,67 +95,6 @@ typedef struct lpst_recent_word_event {
     uint16_t pc;
     uint16_t value;
 } lpst_recent_word_event;
-
-typedef struct lpst_m5p128_trace_event {
-    uint16_t pc;       /* instruction start address */
-    uint16_t stk0;     /* eval stack top value (0 if empty) */
-    uint16_t stk1;     /* eval stack top-1 value (0 if depth<2) */
-    uint16_t stk_depth;
-    uint16_t l8;
-    uint16_t l9;
-} lpst_m5p128_trace_event;
-
-typedef struct lpst_recent_p201_event {
-    uint16_t pc;
-    uint16_t l0;
-    uint16_t l1;
-    uint16_t l2;
-    uint16_t l3;
-    uint16_t l4;
-} lpst_recent_p201_event;
-
-typedef struct lpst_recent_m8_priv0f28_event {
-    uint16_t caller_module_id;
-    uint16_t caller_procedure_index;
-    uint16_t caller_pc;
-    uint16_t arg0;
-    uint16_t arg1;
-    uint16_t arg2;
-    uint16_t arg3;
-    uint16_t arg4;
-    uint16_t arg5;
-} lpst_recent_m8_priv0f28_event;
-
-typedef struct lpst_recent_m1_startup_event {
-    uint16_t procedure_index;
-    uint16_t pc;
-    uint16_t opcode;
-    uint16_t g0;
-    uint16_t g1;
-    uint16_t m1g0;
-    uint16_t m8g59;
-} lpst_recent_m1_startup_event;
-
-typedef struct lpst_recent_m1_proc2_entry_event {
-    uint16_t source_kind;
-    uint16_t source_module_id;
-    uint16_t source_procedure_index;
-    uint16_t source_pc;
-    uint16_t selector_or_token;
-    uint16_t target_pc;
-} lpst_recent_m1_proc2_entry_event;
-
-typedef struct lpst_recent_m2_proc166_return_event {
-    uint16_t caller_module_id;
-    uint16_t caller_procedure_index;
-    uint16_t caller_pc;
-    uint16_t result;
-    uint16_t l0;
-    uint16_t l1;
-    uint16_t l2;
-    uint16_t l3;
-    uint16_t l4;
-} lpst_recent_m2_proc166_return_event;
 
 typedef struct lpst_recent_open_event {
     uint16_t module_id;
@@ -256,24 +189,6 @@ typedef struct lpst_exec_state {
     lpst_recent_word_event recent_ext36[LPST_RECENT_EXT36_EVENTS];
     uint16_t recent_ext36_next;
     uint16_t recent_ext36_count;
-    lpst_recent_p201_event recent_p201[LPST_RECENT_P201_EVENTS];
-    uint16_t recent_p201_next;
-    uint16_t recent_p201_count;
-    lpst_m5p128_trace_event m5p128_trace[LPST_M5P128_TRACE_EVENTS];
-    uint16_t m5p128_trace_next;
-    uint16_t m5p128_trace_count;
-    lpst_recent_m8_priv0f28_event recent_m8_priv0f28[LPST_RECENT_M8_PRIV0F28_EVENTS];
-    uint16_t recent_m8_priv0f28_next;
-    uint16_t recent_m8_priv0f28_count;
-    lpst_recent_m1_startup_event recent_m1_startup[LPST_RECENT_M1_STARTUP_EVENTS];
-    uint16_t recent_m1_startup_next;
-    uint16_t recent_m1_startup_count;
-    lpst_recent_m1_proc2_entry_event recent_m1_proc2_entries[LPST_RECENT_M1_PROC2_ENTRY_EVENTS];
-    uint16_t recent_m1_proc2_entries_next;
-    uint16_t recent_m1_proc2_entries_count;
-    lpst_recent_m2_proc166_return_event recent_m2_proc166_returns[LPST_RECENT_M2_PROC166_RETURN_EVENTS];
-    uint16_t recent_m2_proc166_returns_next;
-    uint16_t recent_m2_proc166_returns_count;
     lpst_recent_open_event recent_open_events[LPST_RECENT_OPEN_EVENTS];
     uint16_t recent_open_events_next;
     uint16_t recent_open_events_count;
