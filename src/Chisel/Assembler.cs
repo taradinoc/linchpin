@@ -1,5 +1,6 @@
 /* Copyright 2026 Tara McGrew. See LICENSE for details. */
 
+using System.IO.Compression;
 using System.Text;
 
 namespace Chisel;
@@ -198,7 +199,7 @@ internal static partial class Program
 		}
 
 		/// <summary>
-		/// Lays out all object-data directives (<c>.objstring</c> and <c>.objpacked</c>) into the read-only
+		/// Lays out all object-data directives (<c>.objstring</c>, <c>.objpacked</c>, and <c>.objinclude</c>) into the read-only
 		/// data section that is appended to the OBJ file after the code.
 		/// </summary>
 		/// <returns>An <see cref="ObjDataLayout"/> containing the encoded bytes and symbol table.</returns>
@@ -221,9 +222,7 @@ internal static partial class Program
 				}
 
 				ushort wordAddress = checked((ushort)(currentByteOffset / 2));
-				byte[] encoded = directive.PackedValues is not null
-					? directive.PackedValues.Select(value => ParseByteToken(value, directive.LineNumber)).ToArray()
-					: EncodeObjString(directive.StringValue!, directive.LineNumber);
+				byte[] encoded = EncodeObjDataDirective(directive);
 				dataSymbols.Add(directive.Label, new DataSymbol(directive.Label, wordAddress, directive.LineNumber));
 				items.Add(new AllocatedObjDataItem(directive.Label, currentByteOffset, encoded, directive.LineNumber));
 				currentByteOffset += encoded.Length;
@@ -236,6 +235,67 @@ internal static partial class Program
 			}
 
 			return new ObjDataLayout(bytes, dataSymbols);
+		}
+
+		/// <summary>Encodes one object-data directive into its byte payload.</summary>
+		/// <param name="directive">The parsed object-data directive.</param>
+		/// <returns>The encoded byte payload.</returns>
+		private static byte[] EncodeObjDataDirective(ObjDataDirective directive)
+		{
+			if (directive.PackedValues is not null)
+			{
+				return directive.PackedValues.Select(value => ParseByteToken(value, directive.LineNumber)).ToArray();
+			}
+
+			if (directive.StringValue is not null)
+			{
+				return EncodeObjString(directive.StringValue, directive.LineNumber);
+			}
+
+			if (directive.IncludedFilePath is not null)
+			{
+				return LoadIncludedFileBytes(directive);
+			}
+
+			throw new AssemblerException($"Line {directive.LineNumber}: object-data directive '{directive.Label}' has no payload.");
+		}
+
+		private static byte[] LoadIncludedFileBytes(ObjDataDirective directive)
+		{
+			string includedFilePath = directive.IncludedFilePath ?? throw new InvalidOperationException("Included file path is required.");
+			if (!File.Exists(includedFilePath))
+			{
+				throw new AssemblerException($"Line {directive.LineNumber}: objinclude file '{includedFilePath}' does not exist.");
+			}
+
+			try
+			{
+				byte[] bytes = HasGzipExtension(includedFilePath)
+					? ReadGzipFile(includedFilePath)
+					: File.ReadAllBytes(includedFilePath);
+				if (bytes.Length == 0)
+				{
+					throw new AssemblerException($"Line {directive.LineNumber}: objinclude file '{includedFilePath}' is empty.");
+				}
+
+				return bytes;
+			}
+			catch (InvalidDataException ex) when (HasGzipExtension(includedFilePath))
+			{
+				throw new AssemblerException($"Line {directive.LineNumber}: objinclude gzip file '{includedFilePath}' could not be decompressed: {ex.Message}");
+			}
+		}
+
+		private static bool HasGzipExtension(string filePath) =>
+			string.Equals(Path.GetExtension(filePath), ".gz", StringComparison.OrdinalIgnoreCase);
+
+		private static byte[] ReadGzipFile(string filePath)
+		{
+			using FileStream input = File.OpenRead(filePath);
+			using GZipStream gzip = new(input, CompressionMode.Decompress);
+			using MemoryStream output = new();
+			gzip.CopyTo(output);
+			return output.ToArray();
 		}
 
 		/// <summary>

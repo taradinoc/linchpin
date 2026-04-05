@@ -137,14 +137,20 @@ internal static partial class Program
 	private sealed record RamOriginDirective(string ValueToken, int LineNumber) : RamDirective(LineNumber);
 
 	/// <summary>
-	/// An <c>.objstring</c> or <c>.objpacked</c> directive declaring a labeled item in the read-only
+	/// An <c>.objstring</c>, <c>.objpacked</c>, or <c>.objinclude</c> directive declaring a labeled item in the read-only
 	/// object-data section that is appended to the OBJ file after the code.
 	/// </summary>
 	/// <param name="Label">The symbol label for this item.</param>
-	/// <param name="StringValue">The string value for <c>.objstring</c>, or <see langword="null"/> for <c>.objpacked</c>.</param>
-	/// <param name="PackedValues">The byte token list for <c>.objpacked</c>, or <see langword="null"/> for <c>.objstring</c>.</param>
+	/// <param name="StringValue">The string value for <c>.objstring</c>, or <see langword="null"/> for the raw-byte forms.</param>
+	/// <param name="PackedValues">The byte token list for <c>.objpacked</c>, or <see langword="null"/> for the other forms.</param>
+	/// <param name="IncludedFilePath">The resolved file path for <c>.objinclude</c>, or <see langword="null"/> for the inline forms.</param>
 	/// <param name="LineNumber">The source line where this directive appears.</param>
-	private sealed record ObjDataDirective(string Label, string? StringValue, IReadOnlyList<string>? PackedValues, int LineNumber);
+	private sealed record ObjDataDirective(
+		string Label,
+		string? StringValue,
+		IReadOnlyList<string>? PackedValues,
+		string? IncludedFilePath,
+		int LineNumber);
 
 	/// <summary>The kind of value a data directive contains.</summary>
 	private enum DataDirectiveKind

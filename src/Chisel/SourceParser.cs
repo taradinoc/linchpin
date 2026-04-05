@@ -380,6 +380,11 @@ internal static partial class Program
 					ParseObjPackedDirective(tokens, lineNumber);
 					break;
 
+				case ".objinclude":
+					RequireProcedureClosed(".objinclude", lineNumber);
+					ParseObjIncludeDirective(tokens, lineNumber, currentPath);
+					break;
+
 				case ".word":
 				case ".words":
 					RequireProcedureClosed(tokens[0], lineNumber);
@@ -462,7 +467,7 @@ internal static partial class Program
 				throw new AssemblerException($"Line {lineNumber}: .objstring expects '<label>, \"text\"'.");
 			}
 
-			objDataDirectives.Add(new ObjDataDirective(tokens[1], UnescapeString(tokens[3]), null, lineNumber));
+			objDataDirectives.Add(new ObjDataDirective(tokens[1], UnescapeString(tokens[3]), null, null, lineNumber));
 		}
 
 		/// <summary>Parses an <c>.objpacked</c> directive into an <see cref="ObjDataDirective"/> containing raw bytes.</summary>
@@ -481,7 +486,25 @@ internal static partial class Program
 				throw new AssemblerException($"Line {lineNumber}: .objpacked requires at least one byte value.");
 			}
 
-			objDataDirectives.Add(new ObjDataDirective(tokens[1], null, operands, lineNumber));
+			objDataDirectives.Add(new ObjDataDirective(tokens[1], null, operands, null, lineNumber));
+		}
+
+		/// <summary>Parses an <c>.objinclude</c> directive into an <see cref="ObjDataDirective"/> backed by a raw byte file or a gzip-compressed byte file.</summary>
+		/// <param name="tokens">The tokenized directive line.</param>
+		/// <param name="lineNumber">The source line number, used in error messages.</param>
+		/// <param name="currentPath">The absolute path of the current source file, used to resolve relative include paths.</param>
+		private void ParseObjIncludeDirective(IReadOnlyList<string> tokens, int lineNumber, string currentPath)
+		{
+			if (tokens.Count != 4 || tokens[2] != "," || !IsQuotedString(tokens[3]))
+			{
+				throw new AssemblerException($"Line {lineNumber}: .objinclude expects '<label>, \"path\"'.");
+			}
+
+			string includePath = UnescapeString(tokens[3]);
+			string resolvedPath = Path.IsPathRooted(includePath)
+				? Path.GetFullPath(includePath)
+				: Path.GetFullPath(Path.Combine(Path.GetDirectoryName(currentPath) ?? string.Empty, includePath));
+			objDataDirectives.Add(new ObjDataDirective(tokens[1], null, null, resolvedPath, lineNumber));
 		}
 
 		/// <summary>Throws an <see cref="AssemblerException"/> if a procedure is currently open, since some directives are only valid at module or file scope.</summary>

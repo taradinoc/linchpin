@@ -72,7 +72,7 @@ internal static partial class Program
 			}
 
 			Stream? resource = typeof(GrammarCatalog).Assembly
-				.GetManifestResourceStream("Chisel.instruction_grammar.json.gz");
+				.GetManifestResourceStream("Chisel.cornerstone_instruction_grammar.json.gz");
 			if (resource is null)
 			{
 				throw new AssemblerException("Embedded grammar resource not found.");
