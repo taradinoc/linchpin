@@ -261,6 +261,7 @@ uint16_t execute_real_exp(lpst_exec_state *state);
 
 /* Extended-opcode dispatch helpers. */
 void handle_ext34(lpst_exec_state *state);
+void handle_ext35(lpst_exec_state *state);
 void handle_ext37(lpst_exec_state *state);
 void handle_ext_open(lpst_exec_state *state);
 void handle_ext_close(lpst_exec_state *state);

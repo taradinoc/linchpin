@@ -286,6 +286,200 @@ static uint16_t format_ext34_scalar(uint16_t arg0, uint16_t arg1, uint16_t arg2,
     return arg0;
 }
 
+static int try_parse_prsreal_text(const lpst_exec_state *state,
+    uint16_t source_handle,
+    uint16_t source_offset,
+    uint16_t source_length,
+    uint16_t option_word,
+    double *out_value,
+    uint16_t *out_consumed_count,
+    uint16_t *out_status_word)
+{
+    char *text = NULL;
+    char *normalized = NULL;
+    size_t byte_count;
+    size_t bounded_offset;
+    size_t start;
+    size_t index;
+    size_t source_limit;
+    size_t normalized_pos = 0;
+    int negative = 0;
+    int used_parentheses = 0;
+    int closed_parentheses = 0;
+    int saw_digit = 0;
+    int saw_decimal_point = 0;
+    int saw_exponent = 0;
+    int exponent_sign_allowed = 0;
+    int saw_exponent_digit = 0;
+    int parsed_ok = 0;
+
+    if (out_value == NULL || out_consumed_count == NULL || out_status_word == NULL) {
+        return 0;
+    }
+
+    *out_value = 0;
+    *out_consumed_count = 0;
+    *out_status_word = 0;
+    (void)option_word;
+
+    if (!is_usable_aggregate_handle(source_handle)) {
+        *out_status_word = 1;
+        return 0;
+    }
+
+    source_limit = (size_t)read_aggregate_word(state, source_handle, 0);
+    bounded_offset = source_offset;
+    if (bounded_offset > source_limit) {
+        bounded_offset = source_limit;
+    }
+    byte_count = (size_t)source_length;
+    if (byte_count > source_limit - bounded_offset) {
+        byte_count = source_limit - bounded_offset;
+    }
+    if (byte_count == 0) {
+        *out_status_word = 1;
+        return 0;
+    }
+
+    text = (char *)malloc(byte_count + 1);
+    if (text == NULL) {
+        return 0;
+    }
+
+    for (start = 0; start < byte_count; start++) {
+        text[start] = (char)read_aggregate_payload_byte(state, source_handle, (int)(bounded_offset + start));
+    }
+    text[byte_count] = '\0';
+
+    start = 0;
+    while (start < byte_count && isspace((unsigned char)text[start])) {
+        start++;
+    }
+
+    if (start < byte_count && text[start] == '(') {
+        used_parentheses = 1;
+        negative = 1;
+        start++;
+    }
+
+    while (start < byte_count) {
+        char ch = text[start];
+        if (ch == '$' || isspace((unsigned char)ch)) {
+            start++;
+            continue;
+        }
+        if (ch == '+' || ch == '-') {
+            negative ^= ch == '-';
+            start++;
+            while (start < byte_count && isspace((unsigned char)text[start])) {
+                start++;
+            }
+            continue;
+        }
+        break;
+    }
+
+    if (start >= byte_count) {
+        free(text);
+        *out_status_word = 1;
+        return 0;
+    }
+
+    normalized = (char *)malloc(byte_count - start + 2);
+    if (normalized == NULL) {
+        free(text);
+        return 0;
+    }
+
+    if (negative) {
+        normalized[normalized_pos++] = '-';
+    }
+
+    for (index = start; index < byte_count; index++) {
+        char ch = text[index];
+        if (isspace((unsigned char)ch)) {
+            break;
+        }
+        if (used_parentheses && ch == ')') {
+            closed_parentheses = 1;
+            index++;
+            break;
+        }
+        if (ch == ',' || ch == '$') {
+            continue;
+        }
+        if (isdigit((unsigned char)ch)) {
+            normalized[normalized_pos++] = ch;
+            saw_digit = 1;
+            if (saw_exponent) {
+                saw_exponent_digit = 1;
+                exponent_sign_allowed = 0;
+            }
+            continue;
+        }
+        if (ch == '.' && !saw_decimal_point && !saw_exponent) {
+            normalized[normalized_pos++] = ch;
+            saw_decimal_point = 1;
+            continue;
+        }
+        if ((ch == 'e' || ch == 'E') && saw_digit && !saw_exponent) {
+            normalized[normalized_pos++] = 'E';
+            saw_exponent = 1;
+            exponent_sign_allowed = 1;
+            continue;
+        }
+        if ((ch == '+' || ch == '-') && exponent_sign_allowed) {
+            normalized[normalized_pos++] = ch;
+            exponent_sign_allowed = 0;
+            continue;
+        }
+
+        break;
+    }
+
+    while (index < byte_count && isspace((unsigned char)text[index])) {
+        index++;
+    }
+
+    *out_consumed_count = (uint16_t)index;
+
+    if (used_parentheses && !closed_parentheses) {
+        *out_status_word = 1;
+        goto cleanup;
+    }
+
+    if (!saw_digit) {
+        *out_status_word = 1;
+        goto cleanup;
+    }
+
+    if (saw_exponent && !saw_exponent_digit) {
+        *out_status_word = 2;
+        goto cleanup;
+    }
+
+    normalized[normalized_pos] = '\0';
+
+    {
+        char *parse_end = NULL;
+        double parsed = strtod(normalized, &parse_end);
+        if (parse_end == NULL || *parse_end != '\0') {
+            *out_status_word = 1;
+            goto cleanup;
+        }
+
+        *out_value = parsed;
+        *out_status_word = 1;
+
+        parsed_ok = 1;
+    }
+
+cleanup:
+    free(normalized);
+    free(text);
+    return parsed_ok;
+}
+
 static double read_big_endian_real64(const lpst_exec_state *state, uint16_t handle)
 {
     union {
@@ -877,4 +1071,54 @@ void handle_ext34(lpst_exec_state *state)
         lpst_exec_push(state,
             format_ext34_scalar(source_word, destination_word, control_word0, control_word1));
     }
+}
+
+void handle_ext35(lpst_exec_state *state)
+{
+    uint16_t result_control_handle;
+    uint16_t option_word;
+    uint16_t source_offset;
+    uint16_t source_length;
+    uint16_t destination_handle;
+    uint16_t source_handle;
+    uint16_t consumed_count;
+    uint16_t status_word;
+    double parsed_value;
+
+    if (state->eval_stack_top < 6) {
+        lpst_exec_push(state, LPST_FALSE_SENTINEL);
+        return;
+    }
+
+    result_control_handle = lpst_exec_pop(state);
+    option_word = lpst_exec_pop(state);
+    source_offset = lpst_exec_pop(state);
+    source_length = lpst_exec_pop(state);
+    destination_handle = lpst_exec_pop(state);
+    source_handle = lpst_exec_pop(state);
+
+    if (try_parse_prsreal_text(state,
+            source_handle,
+            source_offset,
+            source_length,
+            option_word,
+            &parsed_value,
+            &consumed_count,
+            &status_word)
+        && is_usable_aggregate_handle(destination_handle)) {
+        write_big_endian_real64(state, destination_handle, parsed_value);
+        if (is_usable_aggregate_handle(result_control_handle)) {
+            write_aggregate_payload_byte(state, result_control_handle, 0, (uint8_t)(consumed_count & 0xFFu));
+            write_aggregate_payload_byte(state, result_control_handle, 1, (uint8_t)(status_word & 0xFFu));
+        }
+        lpst_exec_push(state, destination_handle);
+        return;
+    }
+
+    if (is_usable_aggregate_handle(result_control_handle)) {
+        write_aggregate_payload_byte(state, result_control_handle, 0, (uint8_t)(consumed_count & 0xFFu));
+        write_aggregate_payload_byte(state, result_control_handle, 1, (uint8_t)(status_word & 0xFFu));
+    }
+
+    lpst_exec_push(state, LPST_FALSE_SENTINEL);
 }

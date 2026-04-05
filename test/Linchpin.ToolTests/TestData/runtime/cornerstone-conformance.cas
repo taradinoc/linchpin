@@ -17,7 +17,8 @@
 .global FAIL_VECTOR=FAIL_VECTOR, PASS_TUPLE=PASS_TUPLE, FAIL_TUPLE=FAIL_TUPLE
 .global PASS_STRING=PASS_STRING, FAIL_STRING=FAIL_STRING, PASS_MODULE=PASS_MODULE
 .global FAIL_MODULE=FAIL_MODULE, PASS_BITFIELD_EDGE=PASS_BITFIELD_EDGE
-.global FAIL_BITFIELD_EDGE=FAIL_BITFIELD_EDGE, SUMMARY_PASS=SUMMARY_PASS
+.global FAIL_BITFIELD_EDGE=FAIL_BITFIELD_EDGE, PASS_REAL=PASS_REAL
+.global FAIL_REAL=FAIL_REAL, SUMMARY_PASS=SUMMARY_PASS
 .global SUMMARY_FAIL=SUMMARY_FAIL
 .global CMP_HEADER=CMP_HEADER, CMP_STRICMP_LABEL=CMP_STRICMP_LABEL
 .global CMP_STRCMP_LABEL=CMP_STRCMP_LABEL, CMP_MEMCMP_LABEL=CMP_MEMCMP_LABEL
@@ -130,6 +131,12 @@ PASS_BITFIELD_EDGE::
 FAIL_BITFIELD_EDGE::
 .string "FAIL BITFIELD EDGE"
 
+PASS_REAL::
+.string "PASS REAL"
+
+FAIL_REAL::
+.string "FAIL REAL"
+
 SUMMARY_PASS::
 .string "SUMMARY PASS"
 
@@ -180,6 +187,75 @@ RAW_STRCMP_LOW2::
 
 STR_CMP_LOW2::
 .string "AB"
+
+REAL_PARSE_INTEGER::
+.string "65355"
+
+REAL_PARSE_INTEGER_NEG::
+.string "-44"
+
+REAL_PARSE_DECIMAL::
+.string "3.1416"
+
+REAL_PARSE_DECIMAL_DOT::
+.string ".99"
+
+REAL_PARSE_DOLLAR::
+.string "$99.95"
+
+REAL_PARSE_DOLLAR_ZERO::
+.string "$0"
+
+REAL_PARSE_COMMA_INTEGER::
+.string "1,000"
+
+REAL_PARSE_COMMA_DECIMAL::
+.string "1,000,000.00"
+
+REAL_PARSE_COMMA_DOLLAR::
+.string "$23,000.00"
+
+REAL_PARSE_SCIENTIFIC::
+.string "2.99e5"
+
+REAL_PARSE_SCIENTIFIC_SMALL::
+.string "7.18e-4"
+
+REAL_PARSE_MINUS_DECIMAL::
+.string "-16.5"
+
+REAL_PARSE_MINUS_EXPONENT::
+.string "-3e12"
+
+REAL_PARSE_PARENS_INTEGER::
+.string "(1000)"
+
+REAL_PARSE_PARENS_DECIMAL::
+.string "(99.95)"
+
+REAL_PARSE_PARENS_EXPONENT::
+.string "(1.30e57)"
+
+REAL_FMT_INTEGER::
+.string "65355"
+
+REAL_FMT_DECIMAL_DOT::
+.string ".99"
+
+REAL_FMT_DOLLAR::
+.string "99.95"
+
+REAL_FMT_COMMA_DECIMAL::
+.string "1000000.00"
+
+REAL_FMT_SCIENTIFIC::
+.string "299000"
+
+REAL_FMT_MINUS_DECIMAL::
+.string "-16.5"
+
+REAL_FMT_PARENS_DECIMAL::
+.string "-99.95"
 
 RAW_STRCMP_HIGH::
 .byte 0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x43, 0x00
@@ -382,10 +458,23 @@ auto_module:
     PUSHW PASS_MODULE
     PUSHW 0x000E
     CALL2 PrintAt
-    JUMP auto_compare
+    JUMP auto_real
 auto_fail_module:
     PUSHW FAIL_MODULE
     PUSHW 0x000E
+    CALL2 PrintAt
+    CALL0 MarkFailure
+
+auto_real:
+    CALL0 TestReal
+    JUMPZ auto_fail_real
+    PUSHW PASS_REAL
+    PUSHW 0x000F
+    CALL2 PrintAt
+    JUMP auto_compare
+auto_fail_real:
+    PUSHW FAIL_REAL
+    PUSHW 0x000F
     CALL2 PrintAt
     CALL0 MarkFailure
 
@@ -1191,6 +1280,278 @@ test_module_pass:
     RETURN
 
 test_bitfield_edge_fail:
+    RZERO
+.endproc
+
+.proc TestReal locals 3
+    PUSH5
+    VALLOC
+    PUTL 0
+
+    PUSH2
+    VALLOC
+    PUTL 1
+
+    PUSHW REAL_PARSE_INTEGER
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_INTEGER_NEG
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_DECIMAL
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_DECIMAL_DOT
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_DOLLAR
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_DOLLAR_ZERO
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_COMMA_INTEGER
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_COMMA_DECIMAL
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_COMMA_DOLLAR
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_SCIENTIFIC
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_SCIENTIFIC_SMALL
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_MINUS_DECIMAL
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_MINUS_EXPONENT
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_PARENS_INTEGER
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_PARENS_DECIMAL
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_PARENS_EXPONENT
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_INTEGER
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+    PUSHL 0
+    PUSHW REAL_FMT_INTEGER
+    PUSHW 0x8001
+    CALL3 AssertFmtrealText
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_DECIMAL_DOT
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+    PUSHL 0
+    PUSHW REAL_FMT_DECIMAL_DOT
+    PUSH2
+    CALL3 AssertFmtrealText
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_DOLLAR
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+    PUSHL 0
+    PUSHW REAL_FMT_DOLLAR
+    PUSH2
+    CALL3 AssertFmtrealText
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_COMMA_DECIMAL
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+    PUSHL 0
+    PUSHW REAL_FMT_COMMA_DECIMAL
+    PUSH2
+    CALL3 AssertFmtrealText
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_SCIENTIFIC
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+    PUSHL 0
+    PUSHW REAL_FMT_SCIENTIFIC
+    PUSHW 0x8001
+    CALL3 AssertFmtrealText
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_MINUS_DECIMAL
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+    PUSHL 0
+    PUSHW REAL_FMT_MINUS_DECIMAL
+    PUSH1
+    CALL3 AssertFmtrealText
+    JUMPZ test_real_fail
+
+    PUSHW REAL_PARSE_PARENS_DECIMAL
+    PUSHL 0
+    PUSHL 1
+    CALL3 AssertPrsrealSuccess
+    JUMPZ test_real_fail
+    PUSHL 0
+    PUSHW REAL_FMT_PARENS_DECIMAL
+    PUSH2
+    CALL3 AssertFmtrealText
+    JUMPZ test_real_fail
+
+    JUMP test_real_pass
+
+test_real_fail:
+    PUSHL 1
+    PUSH2
+    VFREE
+    PUSHL 0
+    PUSH5
+    VFREE
+    RZERO
+
+test_real_pass:
+    PUSHL 1
+    PUSH2
+    VFREE
+    PUSHL 0
+    PUSH5
+    VFREE
+    PUSH1
+    RETURN
+.endproc
+
+.proc AssertPrsrealSuccess locals 3
+    PUSHL 0
+    PUSHL 1
+    PUSHL 0
+    VLOADW_ 0
+    PUSH0
+    PUSHW 0x8001
+    PUSHL 2
+    PRSREAL
+    PUSHL 1
+    JUMPNE assert_prsreal_fail
+
+    PUSHL 2
+    VLOADB_ 0
+    PUSHL 0
+    VLOADW_ 0
+    JUMPNE assert_prsreal_fail
+
+    PUSHL 2
+    VLOADB_ 1
+    PUSH1
+    JUMPNE assert_prsreal_fail
+
+    PUSH1
+    RETURN
+
+assert_prsreal_fail:
+    RZERO
+.endproc
+
+.proc AssertFmtrealText locals 4
+    PUSHW 0x000D
+    VALLOC
+    PUTL 3
+
+    PUSHL 3
+    PUSHW 0x0018
+    VPUTW_ 0
+
+    PUSHL 0
+    PUSHL 3
+    PUSHL 2
+    PUSH0
+    FMTREAL
+    PUSHL 1
+    VLOADW_ 0
+    JUMPNE assert_fmtreal_fail
+
+    PUSHL 1
+    PUSHL 3
+    PUSHL 1
+    VLOADW_ 0
+    MEMCMP
+    JUMPNZ assert_fmtreal_fail
+
+    PUSHL 3
+    PUSHW 0x000D
+    VFREE
+    PUSH1
+    RETURN
+
+assert_fmtreal_fail:
+    PUSHL 3
+    PUSHW 0x000D
+    VFREE
     RZERO
 .endproc
 

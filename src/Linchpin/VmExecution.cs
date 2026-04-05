@@ -1,6 +1,7 @@
 /* Copyright 2026 Tara McGrew. See LICENSE for details. */
 
 using System.Globalization;
+using System.Text;
 
 namespace Linchpin;
 
@@ -680,6 +681,10 @@ internal static class VmExecutor
 			case "FEXP":
 				state.Push(ExecuteUnaryRealOperation(state, Math.Exp));
 				break;
+			case "PRSREAL":
+			case "EXT_35":
+				state.Push(ExecutePrsreal(state));
+				break;
 			case "LOOKUP":
 				if (state.TryExecuteLookup(nextProgramCounter, out ushort lookupResult))
 				{
@@ -1099,6 +1104,41 @@ internal static class VmExecutor
 		return destinationHandle;
 	}
 
+	private static ushort ExecutePrsreal(VmRuntimeState state)
+	{
+		ushort resultControlHandle = state.Pop();
+		ushort optionWord = state.Pop();
+		ushort sourceOffset = state.Pop();
+		ushort sourceLength = state.Pop();
+		ushort destinationHandle = state.Pop();
+		ushort sourceHandle = state.Pop();
+
+		ushort consumedCount = 0;
+		ushort statusWord = 0;
+
+		if (TryParsePrsrealText(state, sourceHandle, sourceOffset, sourceLength, optionWord, out double value, out consumedCount, out statusWord)
+			&& destinationHandle != 0
+			&& destinationHandle != FalseSentinel)
+		{
+			WriteReal64(state, destinationHandle, value);
+			if (resultControlHandle != 0 && resultControlHandle != FalseSentinel)
+			{
+				state.WriteAggregateByte(resultControlHandle, 0, (byte)(consumedCount & 0xFF));
+				state.WriteAggregateByte(resultControlHandle, 1, (byte)(statusWord & 0xFF));
+			}
+
+			return destinationHandle;
+		}
+
+		if (resultControlHandle != 0 && resultControlHandle != FalseSentinel)
+		{
+			state.WriteAggregateByte(resultControlHandle, 0, (byte)(consumedCount & 0xFF));
+			state.WriteAggregateByte(resultControlHandle, 1, (byte)(statusWord & 0xFF));
+		}
+
+		return FalseSentinel;
+	}
+
 	private static double ReadReal64(VmRuntimeState state, ushort handle)
 	{
 		Span<byte> buffer = stackalloc byte[8];
@@ -1129,6 +1169,202 @@ internal static class VmExecutor
 		{
 			state.WriteAggregateByte(handle, index, buffer[index]);
 		}
+	}
+
+	private static bool TryParsePrsrealText(
+		VmRuntimeState state,
+		ushort sourceHandle,
+		ushort sourceOffset,
+		ushort sourceLength,
+		ushort optionWord,
+		out double value,
+		out ushort consumedCount,
+		out ushort statusWord)
+	{
+		value = 0;
+		consumedCount = 0;
+		statusWord = 0;
+		_ = optionWord;
+
+		if (sourceHandle == 0 || sourceHandle == FalseSentinel)
+		{
+			statusWord = 1;
+			return false;
+		}
+
+		int declaredLength = state.ReadAggregateWord(sourceHandle, 0);
+		int boundedOffset = Math.Min(sourceOffset, (ushort)declaredLength);
+		int byteCount = Math.Min(sourceLength, (ushort)Math.Max(0, declaredLength - boundedOffset));
+		if (byteCount <= 0)
+		{
+			statusWord = 1;
+			return false;
+		}
+
+		StringBuilder builder = new(byteCount);
+		for (int index = 0; index < byteCount; index++)
+		{
+			builder.Append((char)(byte)state.ReadAggregateByte(sourceHandle, boundedOffset + index));
+		}
+
+		return TryNormalizePrsrealText(builder.ToString(), out string normalized, out consumedCount, out statusWord)
+			&& double.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+	}
+
+	private static bool TryNormalizePrsrealText(
+		string rawText,
+		out string normalized,
+		out ushort consumedCount,
+		out ushort statusWord)
+	{
+		normalized = string.Empty;
+		consumedCount = 0;
+		statusWord = 0;
+
+		if (string.IsNullOrWhiteSpace(rawText))
+		{
+			statusWord = 1;
+			return false;
+		}
+
+		ReadOnlySpan<char> span = rawText.AsSpan();
+		int index = 0;
+		bool negative = false;
+		bool usedParentheses = false;
+		bool closedParentheses = false;
+		bool sawSignificandDigit = false;
+		bool sawDecimalPoint = false;
+		bool sawExponent = false;
+		bool sawExponentDigit = false;
+		bool exponentSignAllowed = false;
+
+		while (index < span.Length && char.IsWhiteSpace(span[index]))
+		{
+			index++;
+		}
+
+		if (index < span.Length && span[index] == '(')
+		{
+			usedParentheses = true;
+			negative = true;
+			index++;
+		}
+
+		while (index < span.Length)
+		{
+			char ch = span[index];
+			if (ch == '$' || ch == ' ')
+			{
+				index++;
+				continue;
+			}
+
+			if ((ch == '+' || ch == '-') && !sawSignificandDigit && !sawDecimalPoint && !sawExponent)
+			{
+				negative ^= ch == '-';
+				index++;
+				continue;
+			}
+
+			break;
+		}
+
+		StringBuilder builder = new(span.Length + 1);
+		if (negative)
+		{
+			builder.Append('-');
+		}
+
+		for (; index < span.Length; index++)
+		{
+			char ch = span[index];
+
+			if (char.IsWhiteSpace(ch))
+			{
+				break;
+			}
+
+			if (usedParentheses && ch == ')')
+			{
+				closedParentheses = true;
+				index++;
+				break;
+			}
+
+			if (ch == '$' || ch == ',')
+			{
+				continue;
+			}
+
+			if (char.IsDigit(ch))
+			{
+				builder.Append(ch);
+				if (sawExponent)
+				{
+					sawExponentDigit = true;
+					exponentSignAllowed = false;
+				}
+				else
+				{
+					sawSignificandDigit = true;
+				}
+				continue;
+			}
+
+			if (ch == '.' && !sawDecimalPoint && !sawExponent)
+			{
+				builder.Append(ch);
+				sawDecimalPoint = true;
+				continue;
+			}
+
+			if ((ch == 'e' || ch == 'E') && sawSignificandDigit && !sawExponent)
+			{
+				builder.Append('E');
+				sawExponent = true;
+				exponentSignAllowed = true;
+				continue;
+			}
+
+			if ((ch == '+' || ch == '-') && exponentSignAllowed)
+			{
+				builder.Append(ch);
+				exponentSignAllowed = false;
+				continue;
+			}
+
+			break;
+		}
+
+		while (index < span.Length && char.IsWhiteSpace(span[index]))
+		{
+			index++;
+		}
+
+		consumedCount = (ushort)index;
+
+		if (usedParentheses && !closedParentheses)
+		{
+			statusWord = 1;
+			return false;
+		}
+
+		if (!sawSignificandDigit)
+		{
+			statusWord = 1;
+			return false;
+		}
+
+		if (sawExponent && !sawExponentDigit)
+		{
+			statusWord = 2;
+			return false;
+		}
+
+		normalized = builder.ToString();
+		statusWord = 1;
+
+		return true;
 	}
 
 	private static ushort FormatFmtrealScalar(ushort arg0, ushort arg1, ushort arg2, ushort arg3)

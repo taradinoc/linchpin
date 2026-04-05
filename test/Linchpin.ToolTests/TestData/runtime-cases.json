@@ -18,8 +18,8 @@
       "chiselSourcePath": "test/Linchpin.ToolTests/TestData/runtime/cornerstone-conformance.cas",
       "dataDirectoryPath": null,
       "inputText": "ax",
-      "expectedInstructionCount": 1774,
-      "instructionLimit": 2000,
+      "expectedInstructionCount": 2616,
+      "instructionLimit": 3000,
       "expectedScreenPath": "test/Linchpin.ToolTests/TestData/runtime/cornerstone-conformance.screen.txt"
     },
     {

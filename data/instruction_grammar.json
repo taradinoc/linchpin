@@ -6119,16 +6119,16 @@
     },
     {
       "opcode": "0x35",
-      "mnemonic": "EXT_35",
-      "family": "EXT_35",
+      "mnemonic": "PRSREAL",
+      "family": "PRSREAL",
       "length_rule": {
         "kind": "fixed",
         "total_length_bytes": 2,
         "description": "Extension prefix plus secondary opcode byte only; no further inline operands."
       },
       "operands": [],
-      "pop_count": null,
-      "push_count": null
+      "pop_count": 6,
+      "push_count": 1
     },
     {
       "opcode": "0x36",

@@ -39,6 +39,7 @@
  *   0x31  PINM    — preload and pin the current module's code pages
  *   0x32  UNPINM  — release the current module's code-page pins
  *   0x34  bit-field ops (sub-dispatched)
+ *   0x35  PRSREAL — parse numeric text into an 8-byte real buffer
  *   0x37  structured record ops (sub-dispatched)
  */
 #include "lpst_run_internal.h"
@@ -108,6 +109,10 @@ void dispatch_extended(lpst_exec_state *state)
         }
         break;
     }
+
+    case 0x35:
+        handle_ext35(state);
+        break;
 
     case 0x06: /* STOREG: pop value, store in program global[immediate byte] */
         operand_u8 = fetch_byte(state);
