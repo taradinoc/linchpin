@@ -586,6 +586,11 @@ internal static class VmExecutor
 			case "SETJMP":
 				state.Push(state.CreateSetJumpToken(instruction.Operands[0].RawValue, instruction.Operands[1].RawValue));
 				break;
+			case "PINM":
+			case "UNPINM":
+			case "EXT_31":
+			case "EXT_32":
+				break;
 			case "LONGJMPR":
 			{
 				ushort returnValue = state.Pop();

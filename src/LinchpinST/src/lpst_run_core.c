@@ -101,6 +101,10 @@ static lpst_code_cache_entry *select_code_cache_victim(lpst_exec_state *state)
             return entry;
         }
 
+        if (entry->pin_count > 0) {
+            continue;
+        }
+
         if (victim == NULL || entry->last_used_tick < victim->last_used_tick) {
             victim = entry;
         }
@@ -170,6 +174,68 @@ lpst_code_cache_entry *load_code_page(lpst_exec_state *state, const lpst_module 
     touch_code_cache_entry(state, entry);
     bind_current_code_page(state, entry);
     return entry;
+}
+
+bool pin_module_code_pages(lpst_exec_state *state, uint16_t module_id)
+{
+    const lpst_module *mod;
+    uint32_t page_offset;
+
+    if (state == NULL || state->image == NULL) {
+        return false;
+    }
+
+    if (module_id < 1 || module_id > state->image->module_count) {
+        return false;
+    }
+
+    mod = &state->image->modules[module_id - 1];
+    for (page_offset = 0; page_offset < mod->length; page_offset += LPST_CODE_PAGE_SIZE) {
+        lpst_code_cache_entry *entry = load_code_page(state, mod, (uint16_t)page_offset);
+
+        if (entry == NULL) {
+            return false;
+        }
+
+        if (entry->pin_count < UINT16_MAX) {
+            entry->pin_count++;
+        }
+    }
+
+    load_code_page(state, current_module(state), state->program_counter);
+    return true;
+}
+
+void unpin_module_code_pages(lpst_exec_state *state, uint16_t module_id)
+{
+    const lpst_module *mod;
+    uint32_t module_start;
+    uint32_t module_end;
+    size_t index;
+
+    if (state == NULL || state->image == NULL) {
+        return;
+    }
+
+    if (module_id < 1 || module_id > state->image->module_count) {
+        return;
+    }
+
+    mod = &state->image->modules[module_id - 1];
+    module_start = mod->object_offset;
+    module_end = mod->object_offset + mod->length;
+
+    for (index = 0; index < state->code_cache_entry_count; index++) {
+        lpst_code_cache_entry *entry = &state->code_cache_entries[index];
+
+        if (!entry->valid || entry->pin_count == 0) {
+            continue;
+        }
+
+        if (entry->page_base >= module_start && entry->page_base < module_end) {
+            entry->pin_count--;
+        }
+    }
 }
 
 uint8_t read_code_byte_at(lpst_exec_state *state, const lpst_module *mod, uint16_t module_offset)

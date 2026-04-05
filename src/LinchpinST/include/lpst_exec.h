@@ -42,6 +42,7 @@ typedef struct lpst_code_cache_entry {
     uint32_t page_base;       /* absolute OBJ file offset of the start of this page */
     size_t page_size;         /* bytes of valid data in bytes[] (may be < LPST_CODE_PAGE_SIZE at EOF) */
     uint32_t last_used_tick;  /* value of code_cache_tick when this entry was last accessed */
+    uint16_t pin_count;       /* number of active PINM requests keeping this page resident */
     bool valid;
     uint8_t bytes[LPST_CODE_PAGE_SIZE];
 } lpst_code_cache_entry;

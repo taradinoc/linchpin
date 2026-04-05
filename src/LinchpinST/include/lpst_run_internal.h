@@ -29,6 +29,11 @@ void fill_cached_proc_header(const lpst_procedure *proc, lpst_proc_header *out_h
  * and return its entry.  Also warms the current_code_page fast-path fields. */
 lpst_code_cache_entry *load_code_page(lpst_exec_state *state, const lpst_module *mod, uint16_t module_offset);
 
+/* PINM / UNPINM helpers: preload and pin, or unpin, all code pages belonging
+ * to a module.  PINM restores the current fetch page before it returns. */
+bool pin_module_code_pages(lpst_exec_state *state, uint16_t module_id);
+void unpin_module_code_pages(lpst_exec_state *state, uint16_t module_id);
+
 /* Read a single byte from the module at the given offset, faulting in the
  * appropriate code-cache page if necessary. */
 uint8_t read_code_byte_at(lpst_exec_state *state, const lpst_module *mod, uint16_t module_offset);

@@ -36,6 +36,8 @@
  *   0x23  STRCMP  — lexicographic VM-string compare (sort-key aware)
  *   0x24  MEMCMP  — byte-by-byte payload compare
  *   0x25  MEMCMP2 — raw-offset byte compare against payload
+ *   0x31  PINM    — preload and pin the current module's code pages
+ *   0x32  UNPINM  — release the current module's code-page pins
  *   0x34  bit-field ops (sub-dispatched)
  *   0x37  structured record ops (sub-dispatched)
  */
@@ -674,6 +676,20 @@ void dispatch_extended(lpst_exec_state *state)
         unpack_done:
         break;
     }
+
+    case 0x31:
+        if (!pin_module_code_pages(state, state->current_module_id)) {
+            fprintf(stderr, "PINM failed in module %u at PC 0x%04X\n",
+                    state->current_module_id,
+                    state->program_counter - 2);
+            state->is_halted = true;
+            state->halt_code = 0xFFFF;
+        }
+        break;
+
+    case 0x32:
+        unpin_module_code_pages(state, state->current_module_id);
+        break;
 
     default:
         fprintf(stderr, "unhandled extended opcode 0x5F 0x%02X at PC 0x%04X\n",
