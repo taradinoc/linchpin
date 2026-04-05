@@ -1,0 +1,631 @@
+; Streaming Bad Apple player for the Cornerstone VM.
+; The generated frame payload lives in the read-only OBJ trailer and is fetched
+; through the interpreter-managed OBJ channel described by system slot 0xDA.
+; Playback is fast enough that modern hardware can achieve 20 FPS or more, but
+; since the animation is meant to be played at 15 FPS (half of the original 30),
+; a delay loop is used between frames to throttle it. The VM can only measure
+; time down to the second, so the length of the delay loop is adjusted every
+; second until reaching the target FPS.
+
+.include "badapple/badapple-frames.inc"
+
+TARGET_FPS = 15
+DELAY_INNER_COUNT = 0x0010
+PID_SHIFT = 3
+PID_INTEGRAL_LIMIT = 16
+PID_NEG_INTEGRAL_LIMIT = 0xFFF0
+PID_DELTA_LIMIT = 1000
+PID_NEG_DELTA_LIMIT = 0xFE00
+PID_DELAY_LIMIT = 10000
+
+STATUS_PREFIX::
+.string "FPS:"
+
+STATUS_DELAY_PREFIX::
+.string " D:"
+
+STATUS_LEFT_CLEAR::
+.string "                                                                "
+
+STATUS_CLEAR::
+.string "                "
+
+.module Main
+
+.global LineBuffer=0, FrameBuffer=0, PidIntegral=0, PidPreviousError=0, StatusEnabled=0
+
+.export Start, 0
+
+.proc Start
+    .local LastRow, FrameIndex, CurrentSecond, FramesThisSecond, LastFps, CurrentSecondSample, ObjAccess, ObjChannel, BaseRecord, SavedRecordSize, FrameRecord, DelayUnits
+
+    LOADMG 0xC8
+    PUTL LastRow
+
+    PUSH0
+    PUTL FrameIndex
+
+    PUSH0
+    PUTL FramesThisSecond
+
+    PUSH0
+    PUTL LastFps
+
+    PUSH0
+    PUTL DelayUnits
+
+    PUSH0
+    PUTMG PidIntegral
+
+    PUSH0
+    PUTMG PidPreviousError
+
+    ; Keep the status overlay code available, but disable it by default.
+    PUSH0
+    PUTMG StatusEnabled
+
+    ; Allocate one printable row buffer: one length word plus 80 payload bytes.
+    PUSHW 0x0029
+    VALLOC
+    DUP
+    PUSHW FRAME_COLUMNS
+    VPUTW_ 0
+    PUTMG LineBuffer
+
+    ; Allocate one frame buffer: one length word plus 2048 payload bytes.
+    PUSHW 0x0401
+    VALLOC
+    DUP
+    PUSHW FRAME_BYTE_SIZE
+    VPUTW_ 0
+    PUTMG FrameBuffer
+
+    LOADMG 0xDA
+    PUTL ObjAccess
+
+    PUSHL ObjAccess
+    PUSHB 0x1F
+    AND
+    PUTL ObjChannel
+
+    ; 0xDA packs the pre-opened OBJ channel in the low five bits and the start
+    ; of read-only data in 512-byte pages in the upper bits.
+    PUSHL ObjAccess
+    PUSHW 0xFFFB
+    SHIFT
+    PUSH1
+    ASHIFT
+    PUSH2
+    ADD
+    PUTL BaseRecord
+
+    LOADMG 0xD0
+    PULL
+    LOADMG 0xD2
+    PUTL CurrentSecond
+
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+main_loop:
+    LOADMG 0xD0
+    PULL
+    LOADMG 0xD2
+    PUTL CurrentSecondSample
+
+    PUSHL CurrentSecondSample
+    PUSHL CurrentSecond
+    JUMPEQ load_frame
+
+    PUSHL FramesThisSecond
+    PUTL LastFps
+
+    PUSHL DelayUnits
+    PUSHL FramesThisSecond
+    CALL2 AdjustDelayUnits
+    PUTL DelayUnits
+
+    PUSH0
+    PUTL FramesThisSecond
+
+    PUSHL CurrentSecondSample
+    PUTL CurrentSecond
+
+load_frame:
+    PUSHL FrameIndex
+    PUSHB FRAME_RECORD_SHIFT
+    ASHIFT
+    PUSHW FRAME_DATA_START_RECORD
+    ADD
+    PUSHL BaseRecord
+    ADD
+    PUTL FrameRecord
+
+    LOADMG 0xCC
+    PUTL SavedRecordSize
+
+    PUSHW FRAME_RECORD_SIZE
+    PUTMG 0xCC
+
+    LOADMG FrameBuffer
+    PUSHL ObjChannel
+    PUSHL FrameRecord
+    PUSHB FRAME_RECORD_COUNT
+    READREC
+
+    PUSHL SavedRecordSize
+    PUTMG 0xCC
+    POP
+
+    CALL0 RenderFrame
+
+    LOADMG StatusEnabled
+    JUMPZ skip_overlay
+
+    PUSHL LastFps
+    PUSHL DelayUnits
+    CALL2 RenderFpsOverlay
+
+skip_overlay:
+
+    PUSHL DelayUnits
+    CALL1 DelayFrame
+
+    PUSHL FramesThisSecond
+    PUSH1
+    ADD
+    PUTL FramesThisSecond
+
+    PUSHL FrameIndex
+    PUSHW FRAME_LAST_INDEX
+    JUMPEQ wrap_frame
+
+    PUSHL FrameIndex
+    PUSH1
+    ADD
+    PUTL FrameIndex
+    JUMP main_loop
+
+wrap_frame:
+    HALT 1
+.endproc
+
+.proc AdjustDelayUnits
+    .local CurrentDelay, MeasuredFps, Error, Integral, Derivative, Delta, NewDelay
+
+    PUSHL MeasuredFps
+    PUSHW TARGET_FPS
+    SUB
+    PUTL Error
+
+    PUSHL Error
+    JUMPZ hold_target_delay
+
+    JUMP error_ready
+
+hold_target_delay:
+    PUSH0
+    PUTMG PidIntegral
+
+    PUSH0
+    PUTMG PidPreviousError
+
+    PUSHL CurrentDelay
+    RETURN
+
+error_ready:
+
+    LOADMG PidIntegral
+    PUSHL Error
+    ADD
+    PUTL Integral
+
+    PUSHL Integral
+    PUSHW PID_INTEGRAL_LIMIT
+    SUB
+    JUMPGZ clamp_integral_high
+
+    PUSHL Integral
+    PUSHW PID_INTEGRAL_LIMIT
+    ADD
+    JUMPLZ clamp_integral_low
+
+integral_clamped:
+    PUSHL Error
+    LOADMG PidPreviousError
+    SUB
+    PUTL Derivative
+
+    PUSHL Error
+    PUSHB 0x03
+    ASHIFT
+    PUSHL Integral
+    PUSHB 0x02
+    ASHIFT
+    ADD
+    PUSHL Derivative
+    PUSH0
+    ASHIFT
+    ADD
+    PUSHW 0xFFFD
+    ASHIFT
+    PUTL Delta
+
+    PUSHL Delta
+    PUSHW PID_DELTA_LIMIT
+    SUB
+    JUMPGZ clamp_delta_high
+
+    PUSHL Delta
+    PUSHW PID_DELTA_LIMIT
+    ADD
+    JUMPLZ clamp_delta_low
+
+delta_ready:
+delta_step_ready:
+    PUSHL CurrentDelay
+    JUMPNZ delta_clamped
+
+    PUSHL MeasuredFps
+    PUSHW TARGET_FPS
+    SUB
+    JUMPGZ kick_delay
+
+delta_clamped:
+    PUSHL CurrentDelay
+    PUSHL Delta
+    ADD
+    PUTL NewDelay
+
+    PUSHL NewDelay
+    JUMPLZ clamp_delay_zero
+
+    PUSHL NewDelay
+    PUSHW PID_DELAY_LIMIT
+    SUB
+    JUMPGZ clamp_delay_high
+
+delay_clamped:
+    PUSHL Integral
+    PUTMG PidIntegral
+
+    PUSHL Error
+    PUTMG PidPreviousError
+
+    PUSHL NewDelay
+    RETURN
+
+clamp_integral_high:
+    PUSHW PID_INTEGRAL_LIMIT
+    PUTL Integral
+    JUMP integral_clamped
+
+clamp_integral_low:
+    PUSHW PID_NEG_INTEGRAL_LIMIT
+    PUTL Integral
+    JUMP integral_clamped
+
+clamp_delta_high:
+    PUSHW PID_DELTA_LIMIT
+    PUTL Delta
+    JUMP delta_ready
+
+clamp_delta_low:
+    PUSHW PID_NEG_DELTA_LIMIT
+    PUTL Delta
+    JUMP delta_ready
+
+kick_delay:
+    PUSH1
+    PUTL Delta
+    JUMP delta_clamped
+
+clamp_delay_zero:
+    PUSH0
+    PUTL NewDelay
+    JUMP delay_clamped
+
+clamp_delay_high:
+    PUSHW PID_DELAY_LIMIT
+    PUTL NewDelay
+    JUMP delay_clamped
+.endproc
+
+.proc DelayFrame
+    .local DelayUnits, Remaining, InnerCount
+
+    PUSHL DelayUnits
+    JUMPZ delay_done
+
+    PUSHL DelayUnits
+    PUTL Remaining
+
+delay_outer:
+    PUSHW DELAY_INNER_COUNT
+    PUTL InnerCount
+
+delay_inner:
+    PUSHL InnerCount
+    PUSH1
+    SUB
+    PUTL InnerCount
+
+    PUSHL InnerCount
+    JUMPNZ delay_inner
+
+    PUSHL Remaining
+    PUSH1
+    SUB
+    PUTL Remaining
+
+    PUSHL Remaining
+    JUMPNZ delay_outer
+
+delay_done:
+    RET
+.endproc
+
+.proc RenderFrame
+    .local Row, RowOffset
+
+    PUSH0
+    PUTL Row
+
+    PUSH0
+    PUTL RowOffset
+
+row_loop:
+    LOADMG FrameBuffer
+    PUSHW FRAME_COLUMNS
+    LOADMG LineBuffer
+    PUSHL RowOffset
+    PUSH0
+    VECCPYB
+    POP
+
+    PUSHL Row
+    JUMPNZ print_row
+
+    LOADMG StatusEnabled
+    JUMPNZ clear_status_row
+
+    JUMP print_row
+
+clear_status_row:
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    PUSHW STATUS_LEFT_CLEAR
+    PUSHW STATUS_LEFT_CLEAR
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    JUMP next_row
+
+print_row:
+    PUSHL Row
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    LOADMG LineBuffer
+    LOADMG LineBuffer
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+next_row:
+
+    PUSHL Row
+    PUSHW 0x0018
+    JUMPEQ frame_done
+
+    PUSHL Row
+    PUSH1
+    ADD
+    PUTL Row
+
+    PUSHL RowOffset
+    PUSHW FRAME_COLUMNS
+    ADD
+    PUTL RowOffset
+    JUMP row_loop
+
+frame_done:
+    RET
+.endproc
+
+.proc RenderFpsOverlay
+    .local Fps, DelayUnits
+
+    PUSH0
+    PUTMG 0xCA
+    PUSHW 0x0040
+    PUTMG 0xC9
+
+    PUSHW STATUS_CLEAR
+    PUSHW STATUS_CLEAR
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSH0
+    PUTMG 0xCA
+    PUSHW 0x0040
+    PUTMG 0xC9
+
+    PUSHW STATUS_PREFIX
+    PUSHW STATUS_PREFIX
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSHL Fps
+    CALL1 PrintWordDecimal
+
+    PUSHW STATUS_DELAY_PREFIX
+    PUSHW STATUS_DELAY_PREFIX
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSHL DelayUnits
+    CALL1 PrintWordDecimal
+    RET
+.endproc
+
+.proc PrintWordDecimal
+    .local Value, PrintedAny, CurrentDigitCount
+
+    PUSH0
+    PUTL PrintedAny
+
+    PUSH0
+    PUTL CurrentDigitCount
+
+count_10000:
+    PUSHL Value
+    PUSHW 0x2710
+    SUB
+    JUMPLZ emit_10000
+
+    PUSHL Value
+    PUSHW 0x2710
+    SUB
+    PUTL Value
+
+    PUSHL CurrentDigitCount
+    PUSH1
+    ADD
+    PUTL CurrentDigitCount
+    JUMP count_10000
+
+emit_10000:
+    PUSHL CurrentDigitCount
+    JUMPZ maybe_1000
+
+    PUSHL CurrentDigitCount
+    PUSHB 0x30
+    ADD
+    PRCHAR
+    PUSH1
+    PUTL PrintedAny
+
+maybe_1000:
+    PUSH0
+    PUTL CurrentDigitCount
+
+count_1000:
+    PUSHL Value
+    PUSHW 0x03E8
+    SUB
+    JUMPLZ emit_1000
+
+    PUSHL Value
+    PUSHW 0x03E8
+    SUB
+    PUTL Value
+
+    PUSHL CurrentDigitCount
+    PUSH1
+    ADD
+    PUTL CurrentDigitCount
+    JUMP count_1000
+
+emit_1000:
+    PUSHL CurrentDigitCount
+    JUMPNZ print_1000
+    PUSHL PrintedAny
+    JUMPZ maybe_100
+
+print_1000:
+    PUSHL CurrentDigitCount
+    PUSHB 0x30
+    ADD
+    PRCHAR
+    PUSH1
+    PUTL PrintedAny
+
+maybe_100:
+    PUSH0
+    PUTL CurrentDigitCount
+
+count_100:
+    PUSHL Value
+    PUSHW 0x0064
+    SUB
+    JUMPLZ emit_100
+
+    PUSHL Value
+    PUSHW 0x0064
+    SUB
+    PUTL Value
+
+    PUSHL CurrentDigitCount
+    PUSH1
+    ADD
+    PUTL CurrentDigitCount
+    JUMP count_100
+
+emit_100:
+    PUSHL CurrentDigitCount
+    JUMPNZ print_100
+    PUSHL PrintedAny
+    JUMPZ maybe_10
+
+print_100:
+    PUSHL CurrentDigitCount
+    PUSHB 0x30
+    ADD
+    PRCHAR
+    PUSH1
+    PUTL PrintedAny
+
+maybe_10:
+    PUSH0
+    PUTL CurrentDigitCount
+
+count_10:
+    PUSHL Value
+    PUSHW 0x000A
+    SUB
+    JUMPLZ emit_10
+
+    PUSHL Value
+    PUSHW 0x000A
+    SUB
+    PUTL Value
+
+    PUSHL CurrentDigitCount
+    PUSH1
+    ADD
+    PUTL CurrentDigitCount
+    JUMP count_10
+
+emit_10:
+    PUSHL CurrentDigitCount
+    JUMPNZ print_10
+    PUSHL PrintedAny
+    JUMPZ print_1
+
+print_10:
+    PUSHL CurrentDigitCount
+    PUSHB 0x30
+    ADD
+    PRCHAR
+
+print_1:
+    PUSHL Value
+    PUSHB 0x30
+    ADD
+    PRCHAR
+    RET
+.endproc
+
+.entry Main.Start
