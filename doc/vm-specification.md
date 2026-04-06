@@ -2,7 +2,8 @@
 
 ## Version 0.1
 
-*Tara McGrew, March 2026*
+*Tara McGrew*\
+*March&ndash;April 2026*
 
 ## 1. Introduction
 
@@ -381,22 +382,28 @@ After the `0x5F` prefix and secondary opcode byte, extended opcodes use the foll
 
 The packed opcode families are defined by opcode bit fields.
 
-#### 5.6.1 `0x60-0x9F`: `VREAD_loc_vec`
+#### 5.5.1 `0x60-0x9F`: `VREAD_loc_vec`
 
 * bits `0-3` select the local slot containing the aggregate handle;
 * bits `4-5` select one of the first four visible word slots to read.
 
-#### 5.6.2 `0xA0-0xBF`: `PUSH_Ln`
+#### 5.5.2 `0xA0-0xBF`: `PUSH_Ln`
 
 * bits `0-4` select local slots `0..31`.
 
-#### 5.6.3 `0xC0-0xDF`: `PUT_Ln`
+#### 5.5.3 `0xC0-0xDF`: `PUT_Ln`
 
 * bits `0-4` select local slots `0..31`.
 
-#### 5.6.4 `0xE0-0xFF`: `STORE_Ln`
+#### 5.5.4 `0xE0-0xFF`: `STORE_Ln`
 
 * bits `0-4` select local slots `0..31`.
+
+### 5.6 Floating-Point Operations
+
+Several opcodes work with floating-point numbers, which are encoded as *big-endian* 64-bit IEEE754 doubles. Interpreters running on little-endian systems will likely need to reverse the bytes of floating-point values after reading them from VM memory and before writing them to VM memory.
+
+The numbers themselves are stored in RAM, and the arguments passed to the opcodes are their handles. The bytecode program is responsible for allocating all memory used to hold the source and destination numbers.
 
 ## 6. Runtime State, VM Memory, and Aggregates
 
@@ -504,7 +511,7 @@ Some system variables trigger an effect when a value is written to them.
 Not all slots in the system variable range are in use. The following system variables are defined:
 
 * `0xC0`: set to nonzero to disable `KBINPUT`;
-* `0xC1`: set to FALSE to disable screen output; XXX
+* `0xC1`: set to FALSE to disable screen output; (???)
 * `0xC4`, `0xC5`: bottom and top row limits used by bounded scrolling;
 * `0xC7`: screen width, columns - 1;
 * `0xC8`: screen height, rows - 1;
@@ -665,7 +672,7 @@ System slot `0xD6` exposes the state of Caps Lock and Num Lock. The visible bit 
 
 The interpreter does not process CR or LF characters as cursor moves. The bytecode program must move the cursor to the next line as needed.
 
-The interpreter tracks a "virtual" cursor position, but does not move the "physical" cursor until a character is printed or `KBINPUT` is executed. XXX
+The interpreter tracks a "virtual" cursor position, but does not move the "physical" cursor until a character is printed or `KBINPUT` is executed. (???)
 
 System variable `0xCA` contains the cursor row, and `0xC9` contains the cursor column. Writing to `0xC9` commits the current value of `0xCA` and the new value of `0xC9` to the virtual cursor position.
 
@@ -769,76 +776,6 @@ On success:
 
 In ordinary PC BIOS text mode, only bits `0`, `3`, and `5` of `D[2]` affect the rendered text attribute.
 
-## 9. Error Handling and Undefined Behavior
-
-### 9.1 General Rule
-
-Where this specification defines a behavior, an interpreter shall implement that behavior.
-
-Where this specification explicitly marks a field, opcode, or semantic area as reserved, unresolved, or implementation-defined, a conforming implementation may preserve compatibility with the shipped image family without assigning additional semantics.
-
-### 9.2 Illegal Program Actions
-
-The following program actions are illegal:
-
-1. returning from the entry procedure instead of executing `HALT`;
-2. invoking `VFREE` with handle **FALSE**;
-3. assuming that procedure-table order implies procedure layout in code order;
-4. treating the high module-global system-slot band `0xC0..0xDB` as ordinary module-global storage;
-5. assuming that raw `PRCHAR 0x0D` or `PRCHAR 0x0A` produces newline behavior.
-
-The result of any other operation outside the defined domain of an instruction is undefined unless stated otherwise.
-
-### 9.3 Reserved and Unresolved Areas
-
-This edition reserves or leaves unresolved the following areas:
-
-1. the exact semantics and acceptance rules of the `.MME` preamble words at offsets `0x00..0x0C`;
-2. the exact semantic role of program global `0x0C`;
-3. certain arithmetic details noted in the opcode appendix;
-4. exact VM contracts for selected extended helper opcodes noted in the opcode appendix.
-
-An implementation targeting the shipped image family should preserve compatibility in these areas without inventing contradictory semantics.
-
-## 10. Conformance Requirements for Tools and Implementations
-
-### 10.1 Parsers and Disassemblers
-
-A parser or disassembler conforming to this specification shall:
-
-1. parse `.MME` first;
-2. treat `.MME` as authoritative for module count, globals layout, procedure tables, and initial RAM length;
-3. treat `.OBJ` as module-organized code aligned on 256-byte boundaries;
-4. track current module context explicitly;
-5. treat the `0xC0..0xDB` module-global band as interpreter-owned state;
-6. treat `NEXTB` and `SETJMP` packed code-location words as real structural elements;
-7. keep structural decoding separate from behavioral opcode interpretation.
-
-### 10.2 Interpreters
-
-A conforming interpreter shall implement at least the following VM rules:
-
-1. explicit call arguments map into the lowest-numbered locals;
-2. missing locals initialize to **FALSE**;
-3. ordinary returns expose their results on the caller’s stack;
-4. non-local jumps restore frame state and packed code location;
-5. logical RAM addresses use the split low-half/high-half mapping defined in section 6.2;
-6. aggregate slot `0` is VM-visible data and not hidden allocator metadata;
-7. cursor moves commit on writes to system slot `0xC9`;
-8. `KBINPUT` is nonblocking and returns **FALSE** when no input is pending.
-
-### 10.3 Image Emission Boundary
-
-This edition is sufficient to support:
-
-1. code encoding;
-2. procedure-header emission;
-3. module-relative layout;
-4. far-call selector encoding once module and procedure numbering are fixed; and
-5. RAM literal and string emission.
-
-This edition does not assign a producer-side semantic role to every fixed preamble constant in the `.MME` header. For PC-interpreter compatibility, a fresh image emitter shall reproduce the shipped preamble constants; the recovered loader does not apply any additional validation to them.
-
 ## Appendix A. Table of Opcodes
 
 ### A.1 General Notes
@@ -847,8 +784,9 @@ This edition does not assign a producer-side semantic role to every fixed preamb
 2. Extended opcodes are written as `0x5F xx`.
 3. Packed families are described as opcode ranges.
 4. Stack notation uses the convention: `$1` is the top word on the stack (last pushed), `$2` is the next word down (previously pushed), and so on.
-5. In the `Operands` column below, `-` means no inline operands, `B` means one byte, `W` means one word, `WW` means two words, and `J` means a mixed jump encoding that is either one byte or a byte followed by a word.
-6. In the `Pops` and `Pushes` columns below, `varies` means the exact number of values popped or pushed depends on an operand, an argument from the stack, or the number of values returned by a called procedure.
+5. Floating-point arguments are written as `real($1)`, meaning "the floating-point number at the address `$1`".
+6. In the `Operands` column below, `-` means no inline operands, `B` means one byte, `W` means one word, `WW` means two words, and `J` means a mixed jump encoding that is either one byte or a byte followed by a word.
+7. In the `Pops` and `Pushes` columns below, `varies` means the exact number of values popped or pushed depends on an operand, an argument from the stack, or the number of values returned by a called procedure.
 
 ### A.2 Base Opcodes `0x00-0x10`
 
@@ -979,61 +917,60 @@ This edition does not assign a producer-side semantic role to every fixed preamb
 
 | Opcode | Mnemonic | Operands | Pops | Pushes | Description |
 | --- | --- | --- | ---: | ---: | --- |
-| 0x5F 0x00 | [`EXT_00`](#0x5F 0x00-EXT_00) | `-` | varies | varies | reserved extended helper. Structural decoding is defined; VM contract is not. |
-| 0x5F 0x01 | [`XOR`](#0x5F 0x01-XOR) | `-` | 2 | 1 | bitwise XOR. |
-| 0x5F 0x02 | [`NOT`](#0x5F 0x02-NOT) | `-` | 1 | 1 | bitwise complement. |
-| 0x5F 0x03 | [`ROTATE`](#0x5F 0x03-ROTATE) | `-` | 2 | 1 | rotate `$2` by `$1` bit positions and push the rotated word. |
-| 0x5F 0x04 | [`VFIND`](#0x5F 0x04-VFIND) | `-` | 3 | 1 | vector search operation returning an index or **FALSE**. |
-| 0x5F 0x05 | [`STRCHR`](#0x5F 0x05-STRCHR) | `-` | 2 | 1 | search VM string handle `$1` for character `low8($2)` and return the found index or **FALSE**. |
-| 0x5F 0x06 | [`PUTG`](#0x5F 0x06-PUTG) | `B` | 1 | 0 | store into a program global by byte index. |
-| 0x5F 0x07 | [`POPN`](#0x5F 0x07-POPN) | `-` | varies | 0 | variable-sized stack drop. |
-| 0x5F 0x09 | [`LONGJMPR`](#0x5F 0x09-LONGJMPR) | `-` | 2 | 1 | non-local jump through saved state `$2`, returning `$1` at the restored landing point. |
-| 0x5F 0x0A | [`LONGJMP`](#0x5F 0x0A-LONGJMP) | `-` | 1 | 0 | non-local jump through saved state `$1` with no explicit return value. |
-| 0x5F 0x0B | [`SETJMP`](#0x5F 0x0B-SETJMP) | `WW` | 0 | 1 | save non-local control state. |
-| 0x5F 0x0C | [`OPEN`](#0x5F 0x0C-OPEN) | `B` | 0 | 1 | open or attach a logical channel. The inline byte is the mode bitfield defined in section 8.3. |
-| 0x5F 0x0D | [`CLOSE`](#0x5F 0x0D-CLOSE) | `-` | 1 | 1 | close a channel-like value and return a status result. |
-| 0x5F 0x0E | [`READ`](#0x5F 0x0E-READ) | `-` | 3 | 1 | read `$1` words from channel `$2` into vector `$3`, beginning at visible word slot `1`. |
-| 0x5F 0x0F | [`WRITE`](#0x5F 0x0F-WRITE) | `-` | 3 | 1 | write `$1` words from vector `$3` to channel `$2`, beginning at visible word slot `1`. |
-| 0x5F 0x10 | [`READREC`](#0x5F 0x10-READREC) | `-` | 4 | 1 | read `$1` records from channel `$3` starting at record `$2` into the byte payload of vector `$4`. |
-| 0x5F 0x11 | [`WRITEREC`](#0x5F 0x11-WRITEREC) | `-` | 4 | 1 | write `$1` records from the byte payload of vector `$4` to channel `$3` starting at record `$2`. |
-| 0x5F 0x12 | [`DISP`](#0x5F 0x12-DISP) | `B` | 0 | 0 | display-control suboperation selected by inline byte. |
-| 0x5F 0x13 | [`XDISP`](#0x5F 0x13-XDISP) | `B` | 1 | 1 | extended display-control suboperation selected by inline byte. |
-| 0x5F 0x14 | [`FSIZE`](#0x5F 0x14-FSIZE) | `-` | 1 | 1 | file size query in block-like units. |
-| 0x5F 0x15 | [`UNLINK`](#0x5F 0x15-UNLINK) | `-` | 1 | 1 | delete a named file. |
-| 0x5F 0x16 | [`POPRET`](#0x5F 0x16-POPRET) | `-` | varies | 0 | discard the just-returned result bundle. |
-| 0x5F 0x17 | [`KBINPUT`](#0x5F 0x17-KBINPUT) | `-` | 0 | 1 | nonblocking keyboard poll. |
-| 0x5F 0x18 | [`FADD`](#0x5F 0x18-FADD) | `-` | 3 | 1 | floating-point addition over 8-byte real numbers. |
-| 0x5F 0x19 | [`FSUB`](#0x5F 0x19-FSUB) | `-` | 3 | 1 | floating-point subtraction over the same format (`$2 - $1`). |
-| 0x5F 0x1A | [`FMUL`](#0x5F 0x1A-FMUL) | `-` | 3 | 1 | floating-point multiplication over the same format. |
-| 0x5F 0x1B | [`FDIV`](#0x5F 0x1B-FDIV) | `-` | 3 | 1 | floating-point division over the same format (`$2 / $1`). |
-| 0x5F 0x1C | [`TPOP`](#0x5F 0x1C-TPOP) | `-` | 1 | 0 | move the tuple-stack pointer upward by `$1` words. |
-| 0x5F 0x1D | [`FLOG`](#0x5F 0x1D-FLOG) | `-` | 2 | 1 | natural logarithm over 8-byte real numbers. |
-| 0x5F 0x1E | [`FEXP`](#0x5F 0x1E-FEXP) | `-` | 2 | 1 | exponential (inverse natural logarithm) over 8-byte real numbers. |
-| 0x5F 0x1F | [`STRICMP`](#0x5F 0x1F-STRICMP) | `-` | 5 | 1 | compare first string slice `($4, $2, $1)` against second string `($5, 0, $3)` case-insensitively without skipping spaces; return `+1`, `0`, or `-1` with the VM's inverted sign convention. |
-| 0x5F 0x20 | [`STRICMP1`](#0x5F 0x20-STRICMP1) | `-` | 5 | 1 | perform `STRICMP`, but use first string handle `$4 - 1` instead of `$4`. |
-| 0x5F 0x21 | [`WPRINTV`](#0x5F 0x21-WPRINTV) | `-` | 4 | 1 | clipped window print with `$4 = D`, `$3 = S`, `$2 = N`, and `$1 = O`. |
-| 0x5F 0x22 | [`SETWIN`](#0x5F 0x22-SETWIN) | `-` | 1 | 1 | activate the display window described by descriptor handle `$1`. |
-| 0x5F 0x23 | [`STRCMP`](#0x5F 0x23-STRCMP) | `-` | 2 | 1 | compare NUL-terminated byte strings starting at raw byte offset `1` of `$2` and `$1`; return `-1`, `0`, or `+1` using the normal `strcmp` sign convention. |
-| 0x5F 0x24 | [`MEMCMP`](#0x5F 0x24-MEMCMP) | `-` | 3 | 1 | compare `$1` bytes of aggregate `$2` against aggregate `$3` and push the VM comparison result. |
-| 0x5F 0x25 | [`MEMCMPO`](#0x5F 0x25-MEMCMPO) | `-` | 4 | 1 | compare `$2` bytes of aggregate `$3`, starting at raw byte offset `$1`, against the payload of aggregate `$4`, then push the VM comparison result. |
-| 0x5F 0x26 | [`ADVANCE`](#0x5F 0x26-ADVANCE) | `-` | 2 | 1 | vector helper deriving an offset or pointer from an indexed byte. (used to advance to the next B-tree node) |
-| 0x5F 0x27 | [`DECMG`](#0x5F 0x27-DECMG) | `B` | 0 | 1 | decrement a module global and push the new value. |
-| 0x5F 0x28 | [`DECG`](#0x5F 0x28-DECG) | `B` | 0 | 1 | decrement a program global and push the new value. |
-| 0x5F 0x29 | [`POPI`](#0x5F 0x29-POPI) | `B` | varies | 0 | discard `$B` words from the stack. |
-| 0x5F 0x2A | [`INCG`](#0x5F 0x2A-INCG) | `B` | 0 | 1 | increment a program global and push the new value. |
-| 0x5F 0x2B | [`INCMG`](#0x5F 0x2B-INCMG) | `B` | 0 | 1 | increment a module global and push the new value. |
-| 0x5F 0x2C | [`STOREMG`](#0x5F 0x2C-STOREMG) | `B` | 0 | 0 | store into a module global while preserving the top of stack. |
-| 0x5F 0x2D | [`STOREG`](#0x5F 0x2D-STOREG) | `B` | 0 | 0 | store into a program global while preserving the top of stack. |
-| 0x5F 0x2E | [`RETN`](#0x5F 0x2E-RETN) | `B` | varies | varies | counted return; inline byte gives the number of returned words. |
-| 0x5F 0x2F | [`PRCHAR`](#0x5F 0x2F-PRCHAR) | `-` | 1 | 0 | print one character without character-set translation. |
-| 0x5F 0x30 | [`UNPACK`](#0x5F 0x30-UNPACK) | `-` | 4 | 1 | unpack packed 5-bit text symbols with `$4 = source vector`, `$3 = destination vector`, `$2 = word count`, and `$1 = destination byte offset`. |
-| 0x5F 0x31 | [`PINM`](#0x5F 0x31-PINM) | `-` | 0 | 0 | preload and pin all code pages in current module |
-| 0x5F 0x32 | [`UNPINM`](#0x5F 0x32-UNPINM) | `-` | 0 | 0 | unpin current module's code pages |
-| 0x5F 0x34 | [`FMTREAL`](#0x5F 0x34-FMTREAL) | `-` | 4 | 1 | format 8-byte real number as a string. |
-| 0x5F 0x35 | [`PRSREAL`](#0x5F 0x35-PRSREAL) | `-` | 6 | 1 | parse a string as an 8-byte real number |
-| 0x5F 0x36 | [`LOOKUP`](#0x5F 0x36-LOOKUP) | `-` | 1 | 1 | resolve packed descriptor key `$1` into a descriptor-vector handle. |
-| 0x5F 0x37 | [`EXTRACT`](#0x5F 0x37-EXTRACT) | `-` | 8 | 1 | packed descriptor-field walker with `$1` as the mode or subfield selector and `$2-$8` as the descriptor-walker parameters summarized in A.9.3. |
-| 0x5F 0x38 | [`RENAME`](#0x5F 0x38-RENAME) | `-` | 2 | 1 | rename a file from one string name to another. |
+| 0x5F 0x01 | [`XOR`](#0x5f-0x01-xor) | `-` | 2 | 1 | bitwise XOR. |
+| 0x5F 0x02 | [`NOT`](#0x5f-0x02-not) | `-` | 1 | 1 | bitwise complement. |
+| 0x5F 0x03 | [`ROTATE`](#0x5f-0x03-rotate) | `-` | 2 | 1 | rotate `$2` by `$1` bit positions and push the rotated word. |
+| 0x5F 0x04 | [`VFIND`](#0x5f-0x04-vfind) | `-` | 3 | 1 | vector search operation returning an index or **FALSE**. |
+| 0x5F 0x05 | [`STRCHR`](#0x5f-0x05-strchr) | `-` | 2 | 1 | search VM string handle `$1` for character `low8($2)` and return the found index or **FALSE**. |
+| 0x5F 0x06 | [`PUTG`](#0x5f-0x06-putg) | `B` | 1 | 0 | store into a program global by byte index. |
+| 0x5F 0x07 | [`POPN`](#0x5f-0x07-popn) | `-` | varies | 0 | variable-sized stack drop. |
+| 0x5F 0x09 | [`LONGJMPR`](#0x5f-0x09-longjmpr) | `-` | 2 | 1 | non-local jump through saved state `$2`, returning `$1` at the restored landing point. |
+| 0x5F 0x0A | [`LONGJMP`](#0x5f-0x0a-longjmp) | `-` | 1 | 0 | non-local jump through saved state `$1` with no explicit return value. |
+| 0x5F 0x0B | [`SETJMP`](#0x5f-0x0b-setjmp) | `WW` | 0 | 1 | save non-local control state. |
+| 0x5F 0x0C | [`OPEN`](#0x5f-0x0c-open) | `B` | 0 | 1 | open or attach a logical channel. The inline byte is the mode bitfield defined in section 8.3. |
+| 0x5F 0x0D | [`CLOSE`](#0x5f-0x0d-close) | `-` | 1 | 1 | close a channel-like value and return a status result. |
+| 0x5F 0x0E | [`READ`](#0x5f-0x0e-read) | `-` | 3 | 1 | read `$1` words from channel `$2` into vector `$3`, beginning at visible word slot `1`. |
+| 0x5F 0x0F | [`WRITE`](#0x5f-0x0f-write) | `-` | 3 | 1 | write `$1` words from vector `$3` to channel `$2`, beginning at visible word slot `1`. |
+| 0x5F 0x10 | [`READREC`](#0x5f-0x10-readrec) | `-` | 4 | 1 | read `$1` records from channel `$3` starting at record `$2` into the byte payload of vector `$4`. |
+| 0x5F 0x11 | [`WRITEREC`](#0x5f-0x11-writerec) | `-` | 4 | 1 | write `$1` records from the byte payload of vector `$4` to channel `$3` starting at record `$2`. |
+| 0x5F 0x12 | [`DISP`](#0x5f-0x12-disp) | `B` | 0 | 0 | display-control suboperation selected by inline byte. |
+| 0x5F 0x13 | [`XDISP`](#0x5f-0x13-xdisp) | `B` | 1 | 1 | extended display-control suboperation selected by inline byte. |
+| 0x5F 0x14 | [`FSIZE`](#0x5f-0x14-fsize) | `-` | 1 | 1 | file size query in block-like units. |
+| 0x5F 0x15 | [`UNLINK`](#0x5f-0x15-unlink) | `-` | 1 | 1 | delete a named file. |
+| 0x5F 0x16 | [`POPRET`](#0x5f-0x16-popret) | `-` | varies | 0 | discard the just-returned result bundle. |
+| 0x5F 0x17 | [`KBINPUT`](#0x5f-0x17-kbinput) | `-` | 0 | 1 | nonblocking keyboard poll. |
+| 0x5F 0x18 | [`FADD`](#0x5f-0x18-fadd) | `-` | 3 | 1 | floating-point addition over 8-byte real numbers. |
+| 0x5F 0x19 | [`FSUB`](#0x5f-0x19-fsub) | `-` | 3 | 1 | floating-point subtraction over the same format (`$2 - $1`). |
+| 0x5F 0x1A | [`FMUL`](#0x5f-0x1a-fmul) | `-` | 3 | 1 | floating-point multiplication over the same format. |
+| 0x5F 0x1B | [`FDIV`](#0x5f-0x1b-fdiv) | `-` | 3 | 1 | floating-point division over the same format (`$2 / $1`). |
+| 0x5F 0x1C | [`TPOP`](#0x5f-0x1c-tpop) | `-` | 1 | 0 | move the tuple-stack pointer upward by `$1` words. |
+| 0x5F 0x1D | [`FLOG`](#0x5f-0x1d-flog) | `-` | 2 | 1 | natural logarithm over 8-byte real numbers. |
+| 0x5F 0x1E | [`FEXP`](#0x5f-0x1e-fexp) | `-` | 2 | 1 | exponential (inverse natural logarithm) over 8-byte real numbers. |
+| 0x5F 0x1F | [`STRICMP`](#0x5f-0x1f-stricmp) | `-` | 5 | 1 | compare first string slice `($4, $2, $1)` against second string `($5, 0, $3)` case-insensitively without skipping spaces; return `+1`, `0`, or `-1` with the VM's inverted sign convention. |
+| 0x5F 0x20 | [`STRICMP1`](#0x5f-0x20-stricmp1) | `-` | 5 | 1 | perform `STRICMP`, but use first string handle `$4 - 1` instead of `$4`. |
+| 0x5F 0x21 | [`WPRINTV`](#0x5f-0x21-wprintv) | `-` | 4 | 1 | clipped window print with `$4 = D`, `$3 = S`, `$2 = N`, and `$1 = O`. |
+| 0x5F 0x22 | [`SETWIN`](#0x5f-0x22-setwin) | `-` | 1 | 1 | activate the display window described by descriptor handle `$1`. |
+| 0x5F 0x23 | [`STRCMP`](#0x5f-0x23-strcmp) | `-` | 2 | 1 | compare NUL-terminated byte strings starting at raw byte offset `1` of `$2` and `$1`; return `-1`, `0`, or `+1` using the normal `strcmp` sign convention. |
+| 0x5F 0x24 | [`MEMCMP`](#0x5f-0x24-memcmp) | `-` | 3 | 1 | compare `$1` bytes of aggregate `$2` against aggregate `$3` and push the VM comparison result. |
+| 0x5F 0x25 | [`MEMCMPO`](#0x5f-0x25-memcmpo) | `-` | 4 | 1 | compare `$2` bytes of aggregate `$3`, starting at raw byte offset `$1`, against the payload of aggregate `$4`, then push the VM comparison result. |
+| 0x5F 0x26 | [`ADVANCE`](#0x5f-0x26-advance) | `-` | 2 | 1 | vector helper deriving an offset or pointer from an indexed byte. (used to advance to the next B-tree node) |
+| 0x5F 0x27 | [`DECMG`](#0x5f-0x27-decmg) | `B` | 0 | 1 | decrement a module global and push the new value. |
+| 0x5F 0x28 | [`DECG`](#0x5f-0x28-decg) | `B` | 0 | 1 | decrement a program global and push the new value. |
+| 0x5F 0x29 | [`POPI`](#0x5f-0x29-popi) | `B` | varies | 0 | discard `$B` words from the stack. |
+| 0x5F 0x2A | [`INCG`](#0x5f-0x2a-incg) | `B` | 0 | 1 | increment a program global and push the new value. |
+| 0x5F 0x2B | [`INCMG`](#0x5f-0x2b-incmg) | `B` | 0 | 1 | increment a module global and push the new value. |
+| 0x5F 0x2C | [`STOREMG`](#0x5f-0x2c-storemg) | `B` | 0 | 0 | store into a module global while preserving the top of stack. |
+| 0x5F 0x2D | [`STOREG`](#0x5f-0x2d-storeg) | `B` | 0 | 0 | store into a program global while preserving the top of stack. |
+| 0x5F 0x2E | [`RETN`](#0x5f-0x2e-retn) | `B` | varies | varies | counted return; inline byte gives the number of returned words. |
+| 0x5F 0x2F | [`PRCHAR`](#0x5f-0x2f-prchar) | `-` | 1 | 0 | print one character without character-set translation. |
+| 0x5F 0x30 | [`UNPACK`](#0x5f-0x30-unpack) | `-` | 4 | 1 | unpack packed 5-bit text symbols with `$4 = source vector`, `$3 = destination vector`, `$2 = word count`, and `$1 = destination byte offset`. |
+| 0x5F 0x31 | [`PINM`](#0x5f-0x31-pinm) | `-` | 0 | 0 | preload and pin all code pages in current module |
+| 0x5F 0x32 | [`UNPINM`](#0x5f-0x32-unpinm) | `-` | 0 | 0 | unpin current module's code pages |
+| 0x5F 0x34 | [`FMTREAL`](#0x5f-0x34-fmtreal) | `-` | 4 | 1 | format 8-byte real number as a string. |
+| 0x5F 0x35 | [`PRSREAL`](#0x5f-0x35-prsreal) | `-` | 6 | 1 | parse a string as an 8-byte real number |
+| 0x5F 0x36 | [`LOOKUP`](#0x5f-0x36-lookup) | `-` | 1 | 1 | resolve packed descriptor key `$1` into a descriptor-vector handle. |
+| 0x5F 0x37 | [`EXTRACT`](#0x5f-0x37-extract) | `-` | 8 | 1 | packed descriptor-field walker with `$1` as the mode or subfield selector and `$2-$8` as the descriptor-walker parameters summarized in A.9.3. |
+| 0x5F 0x38 | [`RENAME`](#0x5f-0x38-rename) | `-` | 2 | 1 | rename a file from one string name to another. |
 
 ### A.9 Extended Text and Descriptor Helpers
 
@@ -1811,91 +1748,111 @@ write `$1` records from the byte payload of vector `$4` to channel `$3` starting
 Operands: B
 Pop/Push: 0/0
 
-display-control suboperation selected by inline byte.
+Perform the display operation selected by `$B`:
+* 0: Cursor right
+* 1: Cursor left
+* 2: Cursor down
+* 3: Cursor up
+* 4: Erase to end of line
+* 5: Clear from cursor row to bottom
 
 ### `0x5F 0x13 XDISP`
 
 Operands: B
 Pop/Push: 1/1
 
-extended display-control suboperation selected by inline byte.
+Perform the display operation selected by `$B`:
+* 0: Scroll area down by `$1` lines. The area starts at the cursor row and ends at the row in system variable `0xC4`.
+* 1: Scroll area up by `$1` lines. The area starts at the cursor row and ends at the row in system variable `0xC4`.
+* 2/3: No effect.
+* 4: Scroll area down by `$1` lines. The area starts at the row in system variable `0xC5` and ends at the row in system variable `0xC4`.
+* 5: Scroll area up by `$1` lines. The area starts at the row in system variable `0xC5` and ends at the row in system variable `0xC4`.
+* 6: Draw a horizontal line `$1` characters wide, starting at the cursor.
+
+`$1` is then pushed back onto the stack.
 
 ### `0x5F 0x14 FSIZE`
 
 Operands: -
 Pop/Push: 1/1
 
-file size query in block-like units.
+Push the size of the file indicated by open channel `$1`, divided by 256.
 
 ### `0x5F 0x15 UNLINK`
 
 Operands: -
 Pop/Push: 1/1
 
-delete a named file.
+Delete the file whose name is the string `$1` and close any open channels to it.
+
+Push `0` on success or `$8001` on failure.
 
 ### `0x5F 0x16 POPRET`
 
 Operands: -
 Pop/Push: varies/0
 
-discard the just-returned result bundle.
+Discard a number of words from the stack equal to the number of words returned by the most recent `RETURN`, `RFALSE`, `RZERO`, `RET`, or `RETN` instruction.
 
 ### `0x5F 0x17 KBINPUT`
 
 Operands: -
 Pop/Push: 0/1
 
-nonblocking keyboard poll.
+Poll the keyboard for input, and push a key code if a key is available, or `$8001` if no key is available.
+
+If the value of system variable `0xC0` is nonzero, key input is ignored, and this instruction will always push `$8001`.
+
+When a special key is pressed, it is exposed to the bytecode program as two key codes that must be read with two separate calls to `KBINPUT`, as described in [section 8.3](#83-keyboard-polling).
 
 ### `0x5F 0x18 FADD`
 
 Operands: -
 Pop/Push: 3/1
 
-floating-point addition over 8-byte real numbers.
+Floating-point addition: write `real($3) + real($2)` into `real($1)`, then push `$1`.
 
 ### `0x5F 0x19 FSUB`
 
 Operands: -
 Pop/Push: 3/1
 
-floating-point subtraction over the same format (`$2 - $1`).
+Floating-point subtraction: write `real($3) - real($2)` into `real($1)`, then push `$1`.
 
 ### `0x5F 0x1A FMUL`
 
 Operands: -
 Pop/Push: 3/1
 
-floating-point multiplication over the same format.
+Floating-point multiplication: write `real($3) * real($2)` into `real($1)`, then push `$1`.
 
 ### `0x5F 0x1B FDIV`
 
 Operands: -
 Pop/Push: 3/1
 
-floating-point division over the same format (`$2 / $1`).
+Floating-point division: write `real($3) / real($2)` into `real($1)`, then push `$1`.
 
 ### `0x5F 0x1C TPOP`
 
 Operands: -
 Pop/Push: 1/0
 
-move the tuple-stack pointer upward by `$1` words.
+Discard `$1` words from the tuple stack, by incrementing the internal tuple-stack pointer.
 
 ### `0x5F 0x1D FLOG`
 
 Operands: -
 Pop/Push: 2/1
 
-natural logarithm over 8-byte real numbers.
+Floating-point natural logarithm: write `ln(real($2))` into `real($1)`, then push `$1`.
 
 ### `0x5F 0x1E FEXP`
 
 Operands: -
 Pop/Push: 2/1
 
-exponential (inverse natural logarithm) over 8-byte real numbers.
+Floating-point exponential: write $1+2$ `e^real($2)` into `real($1)`, then push `$1`.
 
 ### `0x5F 0x1F STRICMP`
 
