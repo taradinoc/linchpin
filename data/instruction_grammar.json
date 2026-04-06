@@ -6067,8 +6067,8 @@
     },
     {
       "opcode": "0x31",
-      "mnemonic": "EXT_31",
-      "family": "EXT_31",
+      "mnemonic": "PINM",
+      "family": "PINM",
       "length_rule": {
         "kind": "fixed",
         "total_length_bytes": 2,
@@ -6080,8 +6080,8 @@
     },
     {
       "opcode": "0x32",
-      "mnemonic": "EXT_32",
-      "family": "EXT_32",
+      "mnemonic": "PINM",
+      "family": "PINM",
       "length_rule": {
         "kind": "fixed",
         "total_length_bytes": 2,

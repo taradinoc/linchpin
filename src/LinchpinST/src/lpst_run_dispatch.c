@@ -9,14 +9,14 @@
  *   0x02  NOT (bitwise complement)
  *   0x05  STRPOS — search a VM string for a byte character; result is
  *                  1-based position or FALSE_SENTINEL if not found
- *   0x06  STOREG — store TOS into program global[immediate byte]
+ *   0x06  PUTG    — store TOS into program global[immediate byte]
  *   0x09  LONGJMPR — restore a SETJMP snapshot and push a return value
  *   0x0A  LONGJMP  — restore a SETJMP snapshot (no return value pushed)
  *   0x0B  SETJMP   — snapshot the full VM state; push the snapshot token
  *   0x0C  OPEN     — open a file channel
  *   0x0D  CLOSE    — close a file channel
- *   0x0E  SEQREAD  — sequential byte read from a channel
- *   0x0F  SEQWRITE — sequential byte write to a channel
+ *   0x0E  READ     — sequential byte read from a channel
+ *   0x0F  WRITE    — sequential byte write to a channel
  *   0x10  READREC  — random-access record read
  *   0x11  WRITEREC — random-access record write
  *   0x12  DISP     — display attribute (style/colour) control
@@ -24,23 +24,28 @@
  *                    (sub-opcode in the following byte)
  *   0x14  FSIZE    — query file size
  *   0x15  UNLINK   — delete a file
- *   0x16  DISCARD  — pop and discard the most recent multi-value return
- *   0x17  POLLKEY  — poll host keyboard; push key code or FALSE_SENTINEL
- *   0x18-0x1B  floating-point add/sub/mul/div
- *   0x1C  TUPLE-POP — advance tuple-stack pointer (reclaim a frame)
- *   0x1D  REAL-LOG
- *   0x1E  REAL-EXP
- *   0x1F-0x20  case-insensitive string compare (two variants)
+ *   0x16  POPRET   — pop and discard the most recent multi-value return
+ *   0x17  KBINPUT  — poll host keyboard; push key code or FALSE_SENTINEL
+ *   0x18  FADD
+ *   0x19  FSUB
+ *   0x1A  FMUL
+ *   0x1B  FDIV
+ *   0x1C  TPOP     — advance tuple-stack pointer (reclaim a frame)
+ *   0x1D  FLOG
+ *   0x1E  FEXP
+ *   0x1F  STRICMP  — case-insensitive VM-string compare
+ *   0x20  STRICMP1 — case-insensitive VM-string compare (handle-1 variant)
  *   0x21  WPRINTV — windowed print of a substring
  *   0x22  SETWIN  — set window descriptor
  *   0x23  STRCMP  — lexicographic VM-string compare (sort-key aware)
  *   0x24  MEMCMP  — byte-by-byte payload compare
- *   0x25  MEMCMP2 — raw-offset byte compare against payload
- *   0x31  PINM    — preload and pin the current module's code pages
+ *   0x25  MEMCMPO — raw-offset byte compare against payload
+ *   0x31  PINM  — preload and pin the current module's code pages
  *   0x32  UNPINM  — release the current module's code-page pins
- *   0x34  bit-field ops (sub-dispatched)
+ *   0x34  FMTREAL — format numeric text or real values
  *   0x35  PRSREAL — parse numeric text into an 8-byte real buffer
- *   0x37  structured record ops (sub-dispatched)
+ *   0x36  LOOKUP   — table lookup / resolver dispatch
+ *   0x37  EXTRACT  — structured record extraction helper
  */
 #include "lpst_run_internal.h"
 
@@ -114,7 +119,7 @@ void dispatch_extended(lpst_exec_state *state)
         handle_ext35(state);
         break;
 
-    case 0x06: /* STOREG: pop value, store in program global[immediate byte] */
+    case 0x06: /* PUTG: pop value, store in program global[immediate byte] */
         operand_u8 = fetch_byte(state);
         val = lpst_exec_pop(state);
         if (operand_u8 < state->program_global_count) {
@@ -159,11 +164,11 @@ void dispatch_extended(lpst_exec_state *state)
         handle_ext_close(state);
         break;
 
-    case 0x0E: /* SEQREAD: read next byte from active channel */
+    case 0x0E: /* READ: read next byte from active channel */
         handle_ext_seqread(state);
         break;
 
-    case 0x0F: /* SEQWRITE: write a byte to the active channel */
+    case 0x0F: /* WRITE: write a byte to the active channel */
         handle_ext_seqwrite(state);
         break;
 

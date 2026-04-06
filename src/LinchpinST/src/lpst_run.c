@@ -125,7 +125,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
 
         case 0x01: /* ADD */
-        case 0x53: /* ADD alias — same implementation as 0x01 */
+        case 0x53: /* REST — same implementation as 0x01 */
             val2 = lpst_exec_pop(state);
             val = lpst_exec_pop(state);
             lpst_exec_push(state, (uint16_t)(val + val2));
@@ -137,19 +137,19 @@ lpst_result lpst_run(lpst_exec_state *state)
             lpst_exec_push(state, (uint16_t)(val - val2));
             break;
 
-        case 0x03: /* IMUL */
+        case 0x03: /* MUL */
             sval2 = (int16_t)lpst_exec_pop(state);
             sval = (int16_t)lpst_exec_pop(state);
             lpst_exec_push(state, (uint16_t)(sval * sval2));
             break;
 
-        case 0x04: /* IDIV — truncates toward zero */
+        case 0x04: /* DIV — truncates toward zero */
             sval2 = (int16_t)lpst_exec_pop(state);
             sval = (int16_t)lpst_exec_pop(state);
             lpst_exec_push(state, sval2 == 0 ? 0 : (uint16_t)(sval / sval2));
             break;
 
-        case 0x05: /* FLOORMOD — floored modulus matching MME behaviour */
+        case 0x05: /* MOD — floored modulus matching MME behaviour */
         {
             /* MME uses IDIV then adjusts a negative remainder by adding
                the divisor, producing a floored/Euclidean modulus. */
@@ -166,12 +166,12 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x06: /* NEGATE — arithmetic negation */
+        case 0x06: /* NEG — arithmetic negation */
             sval = (int16_t)lpst_exec_pop(state);
             lpst_exec_push(state, (uint16_t)(-sval));
             break;
 
-        case 0x07: /* SHIFT — positive count left-shifts, negative arithmetic right-shifts */
+        case 0x07: /* ASHIFT — positive count left-shifts, negative arithmetic right-shifts */
             sval2 = (int16_t)lpst_exec_pop(state);
             sval = (int16_t)lpst_exec_pop(state);
             if (sval2 >= 0) {
@@ -211,7 +211,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             lpst_exec_push(state, val | val2);
             break;
 
-        case 0x10: /* USHFT — unsigned shift (positive = left, negative = unsigned right) */
+        case 0x10: /* SHIFT — unsigned shift (positive = left, negative = unsigned right) */
             sval2 = (int16_t)lpst_exec_pop(state);
             val = lpst_exec_pop(state);
             if (sval2 >= 0) {
@@ -221,7 +221,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             }
             break;
 
-        case 0x11: /* ALLOCV — allocate a heap vector of word_count words */
+        case 0x11: /* VALLOC — allocate a heap vector of word_count words */
         {
             uint16_t word_count = lpst_exec_pop(state);
             uint16_t allocated_handle = allocate_vector(state, word_count);
@@ -233,7 +233,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x12: /* ALLOCV+FILL — allocate vector and pop word_count values into it */
+        case 0x12: /* VALLOCI — allocate vector and pop word_count values into it */
         {
             uint16_t word_count = lpst_exec_pop(state);
             uint16_t allocated_handle;
@@ -255,7 +255,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x13: /* FREEV — return vector to the free list */
+        case 0x13: /* VFREE — return vector to the free list */
         {
             uint16_t size_words = lpst_exec_pop(state);
             uint16_t allocated_handle = lpst_exec_pop(state);
@@ -263,7 +263,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x14: /* ALLOC-TUPLE — allocate a tuple (high-segment) vector */
+        case 0x14: /* TALLOC — allocate a tuple (high-segment) vector */
         {
             uint16_t word_count = lpst_exec_pop(state);
             uint16_t allocated_handle = allocate_tuple(state, word_count);
@@ -275,7 +275,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x15: /* ALLOC-TUPLE+FILL — allocate tuple and pop word_count values into it */
+        case 0x15: /* TALLOCI — allocate tuple and pop word_count values into it */
         {
             uint16_t word_count = lpst_exec_pop(state);
             uint16_t allocated_handle;
@@ -297,7 +297,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x16: /* VLOADW-dynamic — pop handle and 1-based index, push word */
+        case 0x16: /* VLOADW — pop handle and 1-based index, push word */
         {
             uint16_t index = lpst_exec_pop(state);
             uint16_t dynamic_handle = lpst_exec_pop(state);
@@ -316,7 +316,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x17: /* VLOADB-dynamic — pop handle and 1-based byte index, push byte */
+        case 0x17: /* VLOADB — pop handle and 1-based byte index, push byte */
         {
             int16_t index = (int16_t)lpst_exec_pop(state);
             uint16_t dynamic_handle = lpst_exec_pop(state);
@@ -331,7 +331,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x18: /* VLOADW-imm — pop handle, push word[immediate_index] */
+        case 0x18: /* VLOADW_ — pop handle, push word[immediate_index] */
             operand_u8 = fetch_byte(state);
         {
             uint16_t dynamic_handle = lpst_exec_pop(state);
@@ -347,7 +347,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x19: /* VLOADB-imm — pop handle, push byte[immediate_offset] */
+        case 0x19: /* VLOADB_ — pop handle, push byte[immediate_offset] */
             operand_u8 = fetch_byte(state);
         {
             uint16_t dynamic_handle = lpst_exec_pop(state);
@@ -362,7 +362,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x1A: /* VSTOREW-dynamic — pop value, 1-based index, handle; write word */
+        case 0x1A: /* VPUTW — pop value, 1-based index, handle; write word */
         {
             uint16_t wval = lpst_exec_pop(state);
             uint16_t index = lpst_exec_pop(state);
@@ -377,7 +377,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x1B: /* VSTOREB-dynamic — pop value, 1-based byte index, handle; write byte */
+        case 0x1B: /* VPUTB — pop value, 1-based byte index, handle; write byte */
         {
             uint16_t bval = lpst_exec_pop(state);
             int16_t index = (int16_t)lpst_exec_pop(state);
@@ -388,7 +388,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x1C: /* VSTOREW-imm — pop value and handle, store at word[immediate_index] */
+        case 0x1C: /* VPUTW_ — pop value and handle, store at word[immediate_index] */
             operand_u8 = fetch_byte(state);
         {
             uint16_t wval = lpst_exec_pop(state);
@@ -399,7 +399,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x1D: /* VSTOREB-imm — pop value and handle, store at raw byte[immediate_offset] */
+        case 0x1D: /* VPUTB_ — pop value and handle, store at raw byte[immediate_offset] */
             operand_u8 = fetch_byte(state);
         {
             uint16_t bval = lpst_exec_pop(state);
@@ -411,7 +411,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x1E: /* VFILLW — fill word_count words of aggregate with fill_val, push handle */
+        case 0x1E: /* VECSETW — fill word_count words of aggregate with fill_val, push handle */
         {
             uint16_t fill_val = lpst_exec_pop(state);
             uint16_t count = lpst_exec_pop(state);
@@ -424,7 +424,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x1F: /* VFILLB — fill count bytes of aggregate with fill_val, push handle */
+        case 0x1F: /* VECSETB — fill count bytes of aggregate with fill_val, push handle */
         {
             uint16_t fill_val = lpst_exec_pop(state);
             uint16_t count = lpst_exec_pop(state);
@@ -437,7 +437,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x20: /* COPYW — copy count words from src_handle to dst_handle */
+        case 0x20: /* VECCPYW — copy count words from src_handle to dst_handle */
         {
             uint16_t dst_handle = lpst_exec_pop(state);
             uint16_t count = lpst_exec_pop(state);
@@ -452,7 +452,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x21: /* COPYB-off — copy count bytes at src+src_off to dst+dst_off */
+        case 0x21: /* VECCPYB — copy count bytes at src+src_off to dst+dst_off */
         {
             int16_t dst_off = (int16_t)lpst_exec_pop(state);
             int16_t src_off = (int16_t)lpst_exec_pop(state);
@@ -485,41 +485,41 @@ lpst_result lpst_run(lpst_exec_state *state)
 
 
         /* Small integer constants pushed directly by opcode. */
-        case 0x09: lpst_exec_push(state, 8); break; /* PUSH 8 */
-        case 0x0A: lpst_exec_push(state, 4); break; /* PUSH 4 */
-        case 0x0C: lpst_exec_push(state, 0xFFFFu); break; /* PUSH 0xFFFF */
-        case 0x0D: lpst_exec_push(state, 3); break; /* PUSH 3 */
-        case 0x24: lpst_exec_push(state, 2); break; /* PUSH 2 */
+        case 0x09: lpst_exec_push(state, 8); break; /* PUSH8 */
+        case 0x0A: lpst_exec_push(state, 4); break; /* PUSH4 */
+        case 0x0C: lpst_exec_push(state, 0xFFFFu); break; /* PUSHm1 */
+        case 0x0D: lpst_exec_push(state, 3); break; /* PUSH3 */
+        case 0x24: lpst_exec_push(state, 2); break; /* PUSH2 */
 
-        case 0x25: /* PUSH16 — push an immediate 16-bit LE word */
+        case 0x25: /* PUSHW — push an immediate 16-bit LE word */
             operand_u16 = fetch_le16(state);
             lpst_exec_push(state, operand_u16);
             break;
 
-        case 0x26: /* PUSH8 — push an immediate unsigned byte */
+        case 0x26: /* PUSHB — push an immediate unsigned byte */
             operand_u8 = fetch_byte(state);
             lpst_exec_push(state, (uint16_t)operand_u8);
             break;
 
-        case 0x27: lpst_exec_push(state, LPST_FALSE_SENTINEL); break; /* PUSH FALSE */
-        case 0x28: lpst_exec_push(state, 0); break; /* PUSH 0 */
+        case 0x27: lpst_exec_push(state, LPST_FALSE_SENTINEL); break; /* PUSH_NIL */
+        case 0x28: lpst_exec_push(state, 0); break; /* PUSH0 */
 
         case 0x29: /* DUP — push a copy of the top-of-stack */
             val = lpst_exec_peek(state);
             lpst_exec_push(state, val);
             break;
 
-        case 0x2A: lpst_exec_push(state, (uint16_t)(int16_t)-8); break; /* PUSH -8 */
-        case 0x2B: lpst_exec_push(state, 5); break; /* PUSH 5 */
-        case 0x2C: lpst_exec_push(state, 1); break; /* PUSH 1 */
+        case 0x2A: lpst_exec_push(state, (uint16_t)(int16_t)-8); break; /* PUSHm8 */
+        case 0x2B: lpst_exec_push(state, 5); break; /* PUSH5 */
+        case 0x2C: lpst_exec_push(state, 1); break; /* PUSH1 */
 
-        case 0x2D: /* STOREMG — pop value, store into module global[operand] */
+        case 0x2D: /* PUTMG — pop value, store into module global[operand] */
             operand_u8 = fetch_byte(state);
             val = lpst_exec_pop(state);
             store_module_global(state, operand_u8, val);
             break;
 
-        case 0x2E: lpst_exec_push(state, 0x00FFu); break; /* PUSH 0x00FF */
+        case 0x2E: lpst_exec_push(state, 0x00FFu); break; /* PUSHFF */
 
         case 0x2F: /* DROP — discard the top-of-stack value */
             lpst_exec_pop(state);
@@ -530,90 +530,90 @@ lpst_result lpst_run(lpst_exec_state *state)
             state->program_counter = target;
             break;
 
-        case 0x31: /* JZ — branch if TOS == 0 */
+        case 0x31: /* JUMPZ — branch if TOS == 0 */
             target = decode_jump_target(state, instruction_start);
             val = lpst_exec_pop(state);
             if (val == 0) { state->program_counter = target; }
             break;
 
-        case 0x32: /* JNZ — branch if TOS != 0 */
+        case 0x32: /* JUMPNZ — branch if TOS != 0 */
             target = decode_jump_target(state, instruction_start);
             val = lpst_exec_pop(state);
             if (val != 0) { state->program_counter = target; }
             break;
 
-        case 0x33: /* JFALSE — branch if TOS == FALSE_SENTINEL */
+        case 0x33: /* JUMPF — branch if TOS == FALSE_SENTINEL */
             target = decode_jump_target(state, instruction_start);
             val = lpst_exec_pop(state);
             if (val == LPST_FALSE_SENTINEL) { state->program_counter = target; }
             break;
 
-        case 0x34: /* JNOTFALSE — branch if TOS != FALSE_SENTINEL */
+        case 0x34: /* JUMPNF — branch if TOS != FALSE_SENTINEL */
             target = decode_jump_target(state, instruction_start);
             val = lpst_exec_pop(state);
             if (val != LPST_FALSE_SENTINEL) { state->program_counter = target; }
             break;
 
-        case 0x35: /* JGT — branch if (int16)TOS > 0 */
+        case 0x35: /* JUMPGZ — branch if (int16)TOS > 0 */
             target = decode_jump_target(state, instruction_start);
             sval = (int16_t)lpst_exec_pop(state);
             if (sval > 0) { state->program_counter = target; }
             break;
 
-        case 0x36: /* JLE — branch if (int16)TOS <= 0 */
+        case 0x36: /* JUMPLEZ — branch if (int16)TOS <= 0 */
             target = decode_jump_target(state, instruction_start);
             sval = (int16_t)lpst_exec_pop(state);
             if (sval <= 0) { state->program_counter = target; }
             break;
 
-        case 0x37: /* JLT — branch if (int16)TOS < 0 */
+        case 0x37: /* JUMPLZ — branch if (int16)TOS < 0 */
             target = decode_jump_target(state, instruction_start);
             sval = (int16_t)lpst_exec_pop(state);
             if (sval < 0) { state->program_counter = target; }
             break;
 
-        case 0x38: /* JGE — branch if (int16)TOS >= 0 */
+        case 0x38: /* JUMPGEZ — branch if (int16)TOS >= 0 */
             target = decode_jump_target(state, instruction_start);
             sval = (int16_t)lpst_exec_pop(state);
             if (sval >= 0) { state->program_counter = target; }
             break;
 
-        case 0x39: /* JLT2 — branch if stack[-1] < stack[-2] (signed) */
+        case 0x39: /* JUMPL — branch if stack[-1] < stack[-2] (signed) */
             target = decode_jump_target(state, instruction_start);
 			sval2 = (int16_t)lpst_exec_pop(state);
 			sval = (int16_t)lpst_exec_pop(state);
             if (sval2 < sval) { state->program_counter = target; }
             break;
 
-        case 0x3A: /* JLE2 — branch if stack[-1] <= stack[-2] (signed) */
+        case 0x3A: /* JUMPLE — branch if stack[-1] <= stack[-2] (signed) */
             target = decode_jump_target(state, instruction_start);
 			sval2 = (int16_t)lpst_exec_pop(state);
 			sval = (int16_t)lpst_exec_pop(state);
             if (sval2 <= sval) { state->program_counter = target; }
             break;
 
-        case 0x3B: /* JGE2 — branch if stack[-1] >= stack[-2] (signed) */
+        case 0x3B: /* JUMPGE — branch if stack[-1] >= stack[-2] (signed) */
             target = decode_jump_target(state, instruction_start);
 			sval2 = (int16_t)lpst_exec_pop(state);
 			sval = (int16_t)lpst_exec_pop(state);
             if (sval2 >= sval) { state->program_counter = target; }
             break;
 
-        case 0x3C: /* JGT2 — branch if stack[-1] > stack[-2] (signed) */
+        case 0x3C: /* JUMPG — branch if stack[-1] > stack[-2] (signed) */
             target = decode_jump_target(state, instruction_start);
 			sval2 = (int16_t)lpst_exec_pop(state);
 			sval = (int16_t)lpst_exec_pop(state);
             if (sval2 > sval) { state->program_counter = target; }
             break;
 
-        case 0x3D: /* JEQ — branch if TOS == TOS-1 (bitwise equal) */
+        case 0x3D: /* JUMPEQ — branch if TOS == TOS-1 (bitwise equal) */
             target = decode_jump_target(state, instruction_start);
             val2 = lpst_exec_pop(state);
             val = lpst_exec_pop(state);
             if (val == val2) { state->program_counter = target; }
             break;
 
-        case 0x3E: /* JNE — branch if TOS != TOS-1 (bitwise not equal) */
+        case 0x3E: /* JUMPNE — branch if TOS != TOS-1 (bitwise not equal) */
             target = decode_jump_target(state, instruction_start);
             val2 = lpst_exec_pop(state);
             val = lpst_exec_pop(state);
@@ -642,7 +642,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             enter_near_call(state, operand_u16, 3, state->program_counter);
             break;
 
-        case 0x43: /* CALLN near — return count in immediate byte, target on stack */
+        case 0x43: /* CALL near — return count in immediate byte, target on stack */
             operand_u8 = fetch_byte(state);
             val = lpst_exec_pop(state);
             enter_near_call(state, val, operand_u8, state->program_counter);
@@ -670,34 +670,34 @@ lpst_result lpst_run(lpst_exec_state *state)
             enter_far_call(state, operand_u16, 3, state->program_counter);
             break;
 
-        case 0x48: /* CALLN far — return count in immediate byte, selector on stack */
+        case 0x48: /* CALLF far — return count in immediate byte, selector on stack */
             operand_u8 = fetch_byte(state);
             val = lpst_exec_pop(state);
             enter_far_call(state, val, operand_u8, state->program_counter);
             break;
 
-        case 0x49: /* RET1 — pop one value and return it */
+        case 0x49: /* RETURN — pop one value and return it */
         {
             uint16_t result = lpst_exec_pop(state);
             do_return(state, &result, 1);
             break;
         }
 
-        case 0x4A: /* RETFALSE — return FALSE_SENTINEL as the one result */
+        case 0x4A: /* RFALSE — return FALSE_SENTINEL as the one result */
         {
             uint16_t result = LPST_FALSE_SENTINEL;
             do_return(state, &result, 1);
             break;
         }
 
-        case 0x4B: /* RETZERO — return 0 as the one result */
+        case 0x4B: /* RZERO — return 0 as the one result */
         {
             uint16_t result = 0;
             do_return(state, &result, 1);
             break;
         }
 
-        case 0x4C: lpst_exec_push(state, 6); break; /* PUSH 6 */
+        case 0x4C: lpst_exec_push(state, 6); break; /* PUSH6 */
 
         case 0x4D: /* HALT — stop execution with the given halt code */
             operand_u16 = fetch_le16(state);
@@ -705,14 +705,14 @@ lpst_result lpst_run(lpst_exec_state *state)
             state->halt_code = operand_u16;
             break;
 
-        case 0x4E: /* NEXTPAGE — skip to the start of the next 256-byte code page */
+        case 0x4E: /* NEXTB — skip to the start of the next 256-byte code page */
             state->program_counter = (uint16_t)((instruction_start & ~0xFFu) + 0x100u);
             load_code_page(state, current_module(state), state->program_counter);
             break;
 
-        case 0x4F: lpst_exec_push(state, 7); break; /* PUSH 7 */
+        case 0x4F: lpst_exec_push(state, 7); break; /* PUSH7 */
 
-        case 0x50: /* PRINTS — print substring of a vector aggregate */
+        case 0x50: /* PRINTV — print substring of a vector aggregate */
         {
             uint16_t start_off = lpst_exec_pop(state);
             uint16_t length = lpst_exec_pop(state);
@@ -738,7 +738,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x52: /* STOREVB2 — store byte at raw offset index-1 from aggregate base */
+        case 0x52: /* PUTVB2 — store byte at raw offset index-1 from aggregate base */
         {
             uint16_t bval = lpst_exec_pop(state);
             int16_t index = (int16_t)lpst_exec_pop(state);
@@ -750,7 +750,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             break;
         }
 
-        case 0x54: /* INCL-safe — increment local only if value != FALSE_SENTINEL */
+        case 0x54: /* INCLV — increment local only if value != FALSE_SENTINEL */
             operand_u8 = fetch_byte(state);
             if (operand_u8 < state->current_frame.local_count) {
                 val = state->local_storage[operand_u8];
@@ -760,11 +760,11 @@ lpst_result lpst_run(lpst_exec_state *state)
             }
             break;
 
-        case 0x55: /* RETVOID — return from current procedure with no value */
+        case 0x55: /* RET — return from current procedure with no value */
             do_return(state, NULL, 0);
             break;
 
-        case 0x56: /* STOREL — pop TOS into local[operand] (extended byte-operand form) */
+        case 0x56: /* PUTL — pop TOS into local[operand] */
             operand_u8 = fetch_byte(state);
             val = lpst_exec_pop(state);
             if (operand_u8 < state->current_frame.local_count) {
@@ -772,7 +772,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             }
             break;
 
-        case 0x57: /* LOADL — push local[operand] (extended byte-operand form) */
+        case 0x57: /* PUSHL — push local[operand] */
             operand_u8 = fetch_byte(state);
             val = (operand_u8 < state->current_frame.local_count)
                 ? state->local_storage[operand_u8]
@@ -788,7 +788,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             }
             break;
 
-        case 0x59: /* BITSV-local — extract control_word bit field from aggregate in local */
+        case 0x59: /* BITSVL — extract control_word bit field from aggregate in local */
             operand_u16 = fetch_le16(state);
             operand_u8 = (uint8_t)((operand_u16 >> 4) & 0x0Fu);
             handle = (operand_u8 < state->current_frame.local_count)
@@ -806,7 +806,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             }
             break;
 
-        case 0x5B: /* BITSREP-local — replace control_word bit field in local aggregate */
+        case 0x5B: /* BBSETVL — replace control_word bit field in local aggregate */
             operand_u16 = fetch_le16(state);
             operand_u8 = (uint8_t)((operand_u16 >> 4) & 0x0Fu);
             handle = (operand_u8 < state->current_frame.local_count)
@@ -816,14 +816,14 @@ lpst_result lpst_run(lpst_exec_state *state)
             replace_bit_field_in_local(state, handle, operand_u16, val);
             break;
 
-        case 0x5C: /* BITSREP — replace control_word bit field in stack aggregate */
+        case 0x5C: /* BBSETV — replace control_word bit field in stack aggregate */
             operand_u16 = fetch_le16(state);
             handle = lpst_exec_pop(state);
             val = lpst_exec_pop(state);
             replace_bit_field(state, handle, operand_u16, val);
             break;
 
-        case 0x5D: /* BITSET-local — set single bit in local aggregate */
+        case 0x5D: /* BSETVL — set single bit in local aggregate */
             operand_u16 = fetch_le16(state);
             operand_u8 = (uint8_t)((operand_u16 >> 4) & 0x0Fu);
             handle = (operand_u8 < state->current_frame.local_count)
@@ -832,7 +832,7 @@ lpst_result lpst_run(lpst_exec_state *state)
             replace_single_bit_in_local(state, handle, operand_u16);
             break;
 
-        case 0x5E: /* BITSET — set single bit in stack aggregate */
+        case 0x5E: /* BSETV — set single bit in stack aggregate */
             operand_u16 = fetch_le16(state);
             handle = lpst_exec_pop(state);
             replace_single_bit(state, handle, operand_u16);
