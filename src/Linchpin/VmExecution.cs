@@ -1374,7 +1374,7 @@ internal static class VmExecutor
 
 	private static string FormatFmtrealNumericText(VmRuntimeState state, ushort sourceHandle, ushort controlWord0, ushort controlWord1)
 	{
-		double value = ReadBigEndianReal64(state, sourceHandle);
+		double value = ReadReal64(state, sourceHandle);
 		int scale = controlWord0 == FalseSentinel ? -1 : unchecked((short)controlWord0);
 		byte flags = (byte)controlWord1;
 
@@ -1410,22 +1410,6 @@ internal static class VmExecutor
 		}
 
 		return value.ToString("G15", CultureInfo.InvariantCulture);
-	}
-
-	private static double ReadBigEndianReal64(VmRuntimeState state, ushort handle)
-	{
-		Span<byte> buffer = stackalloc byte[8];
-		for (int index = 0; index < buffer.Length; index++)
-		{
-			buffer[index] = (byte)state.ReadAggregateByte(handle, index);
-		}
-
-		if (BitConverter.IsLittleEndian)
-		{
-			buffer.Reverse();
-		}
-
-		return BitConverter.Int64BitsToDouble(BitConverter.ToInt64(buffer));
 	}
 
 	private static bool IsNearlyIntegral(double value)
