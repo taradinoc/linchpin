@@ -7,18 +7,6 @@ namespace Linchpin;
 internal sealed partial class VmRuntimeState
 {
 	/// <summary>
-	/// The value pushed by comparison opcodes (MEMCMP, MEMCMPO, STRCMP, STRICMP, STRICMP1)
-	/// when the first operand is less than the second. The original MME's comparison dispatcher
-	/// applies SHR AX,1 to the raw result, collapsing -1/0/+1 into 0x7FFF/0/0. This constant
-	/// represents the &quot;less than&quot; result after that transformation.
-	/// </summary>
-	/// <summary>
-	/// MME's comparison convention for aggregate byte comparisons (MEMCMP, MEMCMPO):
-	/// +1 for first &lt; second, 0 for equal, -1 (0xFFFF) for first &gt; second.
-	/// This is the same "inverted" convention used by STRICMP.
-	/// </summary>
-
-	/// <summary>
 	/// Opens a synthetic file channel. Pops a discard value and the file name handle from the stack,
 	/// resolves the file from the synthetic file system or host disk, and returns a channel ID.
 	/// Returns <c>FalseSentinel</c> if the file cannot be found or created.
@@ -379,22 +367,16 @@ internal sealed partial class VmRuntimeState
 	}
 
 	/// <summary>
-	/// Compares two structured sort key aggregates using the same algorithm as MME.EXE's
-	/// STRCMP handler (at 1000:74B0). This is NOT a simple NUL-terminated byte comparison.
+	/// Compares two structured sort key aggregates using lexicographic comparison.
+    /// This is NOT a simple NUL-terminated byte comparison.
 	/// </summary>
 	/// <remarks>
-	/// <para>
-	/// MME's helper function at 1000:3472 reads a payload byte at index N, which is the byte
-	/// at absolute address (handle*2 + N + 2) — i.e., it skips the 2-byte header word.
-	/// </para>
-	/// <para>
-	/// The algorithm reads a "remaining field count" from payload byte -1 (= raw byte 1 = high
-	/// byte of the header word) of each handle. Then it enters a structured comparison loop:
+	/// The algorithm reads a "field count" from payload byte -1 (= raw byte 1 = high
+	/// byte of the first word) of each handle. Then it enters a structured comparison loop:
 	/// read a sub-key length from each handle, compare that many data bytes, and repeat until
 	/// all sub-keys are exhausted.
-	/// </para>
 	/// </remarks>
-	public ushort CompareVmStrings(ushort firstHandle, ushort secondHandle)
+	public ushort CompareSortKeys(ushort firstHandle, ushort secondHandle)
 	{
 		// Payload byte -1 = raw byte 1 = high byte of word 0 = "remaining byte count"
 		int firstRemaining = (byte)ReadAggregateByte(firstHandle, -1);
@@ -411,7 +393,6 @@ internal sealed partial class VmRuntimeState
 				{
 					// Both exhausted — check bit 6 of payload byte -2 for structured flag.
 					// If set, return 0 (equal). If not, return -1 or jump to tie-break.
-					// The MME code at 0x74F5 reads payload[-2] and checks AND 0x40.
 					byte flagByte = (byte)ReadAggregateByte(firstHandle, -2);
 					if ((flagByte & 0x40) == 0)
 					{
@@ -493,19 +474,6 @@ internal sealed partial class VmRuntimeState
 			// Field lengths equal, all bytes equal → skip the equal-length bytes
 			// and continue to the next sub-key (loop back)
 			// payloadIndex is already advanced past the compared bytes
-		}
-	}
-
-	private string SafeStringPreview(ushort handle, ushort length, ushort offset)
-	{
-		try
-		{
-			var bytes = ReadAggregatePayloadBytes(handle, length, offset);
-			return new string(bytes.ToArray().Select(b => b >= 0x20 && b < 0x7F ? (char)b : '.').ToArray());
-		}
-		catch
-		{
-			return "?";
 		}
 	}
 

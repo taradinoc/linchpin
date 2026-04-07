@@ -5845,8 +5845,8 @@
     },
     {
       "opcode": "0x23",
-      "mnemonic": "STRCMP",
-      "family": "STRCMP",
+      "mnemonic": "KEYCMP",
+      "family": "KEYCMP",
       "length_rule": {
         "kind": "fixed",
         "total_length_bytes": 2,

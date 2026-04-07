@@ -738,11 +738,11 @@ internal static class VmExecutor
 				state.Push(memcmpResult);
 				break;
 			}
-			case "STRCMP":
+			case "KEYCMP":
 			{
 				ushort secondHandle = state.Pop();
 				ushort firstHandle = state.Pop();
-				state.Push(state.CompareVmStrings(firstHandle, secondHandle));
+				state.Push(state.CompareSortKeys(firstHandle, secondHandle));
 				break;
 			}
 			case "STRICMP":

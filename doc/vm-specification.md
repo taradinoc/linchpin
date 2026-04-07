@@ -940,9 +940,9 @@ In ordinary PC BIOS text mode, only bits `0`, `3`, and `5` of `D[2]` affect the 
 | 0x5F 0x16 | [`POPRET`](#0x5f-0x16-popret) | `-` | varies | 0 | discard the just-returned result bundle. |
 | 0x5F 0x17 | [`KBINPUT`](#0x5f-0x17-kbinput) | `-` | 0 | 1 | nonblocking keyboard poll. |
 | 0x5F 0x18 | [`FADD`](#0x5f-0x18-fadd) | `-` | 3 | 1 | floating-point addition over 8-byte real numbers. |
-| 0x5F 0x19 | [`FSUB`](#0x5f-0x19-fsub) | `-` | 3 | 1 | floating-point subtraction over the same format (`$2 - $1`). |
+| 0x5F 0x19 | [`FSUB`](#0x5f-0x19-fsub) | `-` | 3 | 1 | floating-point subtraction over the same format (`real($2) - real($1)`). |
 | 0x5F 0x1A | [`FMUL`](#0x5f-0x1a-fmul) | `-` | 3 | 1 | floating-point multiplication over the same format. |
-| 0x5F 0x1B | [`FDIV`](#0x5f-0x1b-fdiv) | `-` | 3 | 1 | floating-point division over the same format (`$2 / $1`). |
+| 0x5F 0x1B | [`FDIV`](#0x5f-0x1b-fdiv) | `-` | 3 | 1 | floating-point division over the same format (`real($2) / real($1)`). |
 | 0x5F 0x1C | [`TPOP`](#0x5f-0x1c-tpop) | `-` | 1 | 0 | move the tuple-stack pointer upward by `$1` words. |
 | 0x5F 0x1D | [`FLOG`](#0x5f-0x1d-flog) | `-` | 2 | 1 | natural logarithm over 8-byte real numbers. |
 | 0x5F 0x1E | [`FEXP`](#0x5f-0x1e-fexp) | `-` | 2 | 1 | exponential (inverse natural logarithm) over 8-byte real numbers. |
@@ -950,7 +950,7 @@ In ordinary PC BIOS text mode, only bits `0`, `3`, and `5` of `D[2]` affect the 
 | 0x5F 0x20 | [`STRICMP1`](#0x5f-0x20-stricmp1) | `-` | 5 | 1 | perform `STRICMP`, but use first string handle `$4 - 1` instead of `$4`. |
 | 0x5F 0x21 | [`WPRINTV`](#0x5f-0x21-wprintv) | `-` | 4 | 1 | clipped window print with `$4 = D`, `$3 = S`, `$2 = N`, and `$1 = O`. |
 | 0x5F 0x22 | [`SETWIN`](#0x5f-0x22-setwin) | `-` | 1 | 1 | activate the display window described by descriptor handle `$1`. |
-| 0x5F 0x23 | [`STRCMP`](#0x5f-0x23-strcmp) | `-` | 2 | 1 | compare NUL-terminated byte strings starting at raw byte offset `1` of `$2` and `$1`; return `-1`, `0`, or `+1` using the normal `strcmp` sign convention. |
+| 0x5F 0x23 | [`KEYCMP`](#0x5f-0x23-keycmp) | `-` | 2 | 1 | compare structured sort keys. |
 | 0x5F 0x24 | [`MEMCMP`](#0x5f-0x24-memcmp) | `-` | 3 | 1 | compare `$1` bytes of aggregate `$2` against aggregate `$3` and push the VM comparison result. |
 | 0x5F 0x25 | [`MEMCMPO`](#0x5f-0x25-memcmpo) | `-` | 4 | 1 | compare `$2` bytes of aggregate `$3`, starting at raw byte offset `$1`, against the payload of aggregate `$4`, then push the VM comparison result. |
 | 0x5F 0x26 | [`ADVANCE`](#0x5f-0x26-advance) | `-` | 2 | 1 | vector helper deriving an offset or pointer from an indexed byte. (used to advance to the next B-tree node) |
@@ -1882,32 +1882,48 @@ Pop/Push: 1/1
 
 activate the display window described by descriptor handle `$1`.
 
-### `0x5F 0x23 STRCMP`
+### `0x5F 0x23 KEYCMP`
 
 Operands: -
 Pop/Push: 2/1
 
-Compare the NUL-terminated byte strings starting at raw byte offset `1` of `$2` and `$1`.
+Compare the structured sort keys at `$2` and `$1`, and push `1` if the former is greater than or equal to the latter, or `0` otherwise.
 
-This opcode does not use the normal VM Pascal-string layout. Direct MME probing shows that ordinary `.string` aggregates compare as empty strings, while raw records such as `.byte 0x00, 'A', 'B', 0` and `.byte 0x00, 'A', 'C', 0` compare using the normal `strcmp` sign convention:
+The structure of the sort keys is:
+- One tiebreaker byte `C`,
+- One byte giving a total number of bytes `N`,
+- Two tiebreaker bytes `B` and `A`, and finally
+- `N` bytes containing a series of fields.
 
-* `-1` when the first record sorts before the second;
-* `0` when the two byte strings are equal;
-* `+1` when the first record sorts after the second.
+Each field consists of a length byte `L` followed by `L` bytes of data.
+
+The key comparison process is:
+1. Starting with the first field in each key, compare each byte of the field. If any byte differs, treat the key with the lower byte as smaller and stop.
+2. If all bytes match but one key's field is shorter than the other's, treat the shorter one as smaller and stop.
+3. If all bytes match and the fields are the same length, and both keys have more fields remaining, move on to the next field and repeat from step 2.
+4. If one key runs out of fields before the other, treat that one as smaller and stop.
+5. Examine bit 6 of tiebreaker byte `C` in the first key. If the bit is clear, treat the keys as equal and stop.
+6. Calculate a first tiebreaker value `((A & 0x3F) << 8) + B` from the `A` and `B` tiebreaker bytes of each key. If the values differ, treat the key with the lower value as smaller and stop.
+7. Calculate a second tiebreaker value `C & 0x3F` from the `C` tiebreaker bytes of each key. If the values differ, treat the key with the lower value as smaller and stop.
+8. If everything matches, treat the first key as greater and stop.
 
 ### `0x5F 0x24 MEMCMP`
 
 Operands: -
 Pop/Push: 3/1
 
-compare `$1` bytes of aggregate `$2` against aggregate `$3` and push the VM comparison result.
+Compare `$1` bytes of aggregate `$2` against aggregate `$3` and push the result.
+
+The result is `1` if `$1` is *smaller* than `$2`, and `-1` if `$1` is *greater*; this is the opposite of C `memcmp`.
 
 ### `0x5F 0x25 MEMCMPO`
 
 Operands: -
 Pop/Push: 4/1
 
-compare `$2` bytes of aggregate `$3`, starting at raw byte offset `$1`, against the payload of aggregate `$4`, then push the VM comparison result.
+Compare `$2` bytes of aggregate `$3`, starting at byte offset `$1`, against aggregate `$4`, starting at byte offset 2, and push the result.
+
+The result is `1` if `$1` is *smaller* than `$2`, and `-1` if `$1` is *greater*; this is the opposite of C `memcmp`.
 
 ### `0x5F 0x26 ADVANCE`
 
