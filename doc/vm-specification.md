@@ -969,57 +969,10 @@ In ordinary PC BIOS text mode, only bits `0`, `3`, and `5` of `D[2]` affect the 
 | 0x5F 0x34 | [`FMTREAL`](#0x5f-0x34-fmtreal) | `-` | 4 | 1 | format 8-byte real number as a string. |
 | 0x5F 0x35 | [`PRSREAL`](#0x5f-0x35-prsreal) | `-` | 6 | 1 | parse a string as an 8-byte real number |
 | 0x5F 0x36 | [`LOOKUP`](#0x5f-0x36-lookup) | `-` | 1 | 1 | resolve packed descriptor key `$1` into a descriptor-vector handle. |
-| 0x5F 0x37 | [`EXTRACT`](#0x5f-0x37-extract) | `-` | 8 | 1 | packed descriptor-field walker with `$1` as the mode or subfield selector and `$2-$8` as the descriptor-walker parameters summarized in A.9.3. |
+| 0x5F 0x37 | [`EXTRACT`](#0x5f-0x37-extract) | `-` | 8 | 1 | packed descriptor-field walker with `$1` as the mode or subfield selector and `$2-$8` as the descriptor-walker parameters summarized in A.9.2. |
 | 0x5F 0x38 | [`RENAME`](#0x5f-0x38-rename) | `-` | 2 | 1 | rename a file from one string name to another. |
 
-### A.9 Extended Text and Descriptor Helpers
-
-#### A.9.1 `UNPACK` (`0x5F 0x30`)
-
-`UNPACK` has the following stack inputs:
-
-* `$4 = packed source vector`;
-* `$3 = destination vector`;
-* `$2 = word count`;
-* `$1 = destination byte offset`.
-
-Its behavior is:
-
-1. read 16-bit source words;
-2. extract three 5-bit symbols from each source word by rotate-and-mask;
-3. write each extracted symbol as one byte into the destination vector;
-4. if the source word high bit is set, OR `0x80` into the last emitted symbol and return **FALSE**;
-5. otherwise return the destination offset after the last emitted symbol.
-
-`UNPACK` performs only raw 5-bit symbol extraction. Alphabet mapping is bytecode-level logic and not part of the hardwired interpreter contract.
-
-#### A.9.2 `LOOKUP`
-
-`LOOKUP` interprets its operand as a packed descriptor key.
-
-It shall:
-
-1. consult a four-word root vector held in system slot `0xD8`;
-2. use the low seven bits as a primary 1-based index;
-3. use the high byte as a secondary 1-based index;
-4. return a descriptor-vector handle directly if found;
-5. otherwise fall back to a resolver procedure selected by `D8[3]`.
-
-#### A.9.3 `EXTRACT`
-
-`EXTRACT` is a field walker and extractor over packed descriptor records.
-
-Its effective stack effect is `8 -> 1`.
-
-The last stack word is a mode or subfield selector. Earlier operands supply a base descriptor pointer, span, optional destination buffer, optional tag selector, optional skip count, initial word offset, and optional nonzero-content guard.
-
-Mode semantics are:
-
-* mode **FALSE**: operate on the whole selected item, returning or copying its byte span;
-* mode `0`: return the record header high byte;
-* mode `n > 0`: select the `n`th packed subfield of a compound record.
-
-### A.10 Packed Opcode Families
+### A.9 Packed Opcode Families
 
 | Opcode | Mnemonic | Operands | Pops | Pushes | Description |
 | --- | --- | --- | ---: | ---: | --- |
@@ -2061,14 +2014,109 @@ Additional error/status codes may exist. Any code other than `0x01` indicates fa
 Operands: -
 Pop/Push: 1/1
 
-resolve packed descriptor key `$1` into a descriptor-vector handle.
+Resolve a packed descriptor key through a two-level descriptor table rooted at system slot `0xD8`.
+
+The root object in `0xD8` is a four-word vector. The following words are used:
+
+* `R[0]`: handle of the primary table;
+* `R[2]`: base handle added to successful relative descriptor values;
+* `R[3]`: far-procedure selector for the fallback resolver.
+
+`R[1]` is not currently defined by this specification.
+
+The packed lookup key is interpreted as follows:
+
+* low 7 bits: primary 1-based index `I`;
+* high byte: secondary 1-based index `J`.
+
+A key with either `I = 0` or `J = 0` is invalid.
+
+The lookup process is:
+
+1. read the primary table handle `P = R[0]`;
+2. read the secondary table handle `S = P[2 * (I - 1)]`;
+3. if `S` is `0` or **FALSE**, perform a far call to resolver procedure `R[3]`, passing the original packed key as its sole argument;
+4. otherwise read `D = S[J - 1] & 0x3FFF`;
+5. if `D != 0x3FFF`, return `R[2] + D`;
+6. otherwise perform the same fallback far call to `R[3]`.
+
+The effect of the fallback path is that `LOOKUP` does not produce an immediate table result. Instead, it delegates resolution to the far-called resolver procedure, whose eventual return value becomes the result observed by the caller.
 
 ### `0x5F 0x37 EXTRACT`
 
 Operands: -
 Pop/Push: 8/1
 
-packed descriptor-field walker with `$1` as the mode or subfield selector and `$2-$8` as the descriptor-walker parameters summarized in A.9.3.
+Extract data from a structure.
+
+`EXTRACT` is a multi-mode descriptor walker and extractor. It interprets the source bytes as one of several closely related packed data layouts and either returns information about the selected item or copies bytes from it into a destination aggregate.
+
+Its effective stack effect is `8 -> 1`.
+
+The stack inputs are:
+
+* `$8 = B`: base aggregate handle;
+* `$7 = S`: available span, in words;
+* `$6 = D`: destination aggregate handle, or **FALSE** if no destination copy is required;
+* `$5 = A`: auxiliary selector;
+* `$4 = K`: auxiliary selector or starting word offset;
+* `$3 = O`: explicit word offset within the adjusted source, or **FALSE**;
+* `$2 = G`: nonzero-content guard, or **FALSE**;
+* `$1 = M`: mode or component selector.
+
+`EXTRACT` uses the following packed structures.
+
+An **ordinary record** begins with a header word whose low byte is a tag and whose high byte is a component count. The record payload follows immediately after the header word.
+
+If the component count is zero, the payload is a single packed field. Otherwise, the payload is a sequence of that many packed fields.
+
+A **packed field** begins with a length byte `L`.
+
+* If bit 7 of `L` is clear, the field contains `L` bytes of data following the length byte, and its encoded size is `L + 1` bytes rounded up to a whole number of words.
+* If bit 7 of `L` is set, the field is a fixed-size 8-byte real value occupying 4 words.
+
+When ordinary-record decoding is not usable at the selected position, `EXTRACT` may reinterpret the same bytes as a **typed field**. A typed field begins with a header word whose low byte is a kind and whose high byte is a component count.
+
+* If the header word is zero, the field is empty and occupies one word.
+* If `kind = 0`, the following word gives the total field length in words, and the remaining bytes are interpreted as a variable-sized composite payload.
+* If `kind > 0`, the field contains `count` fixed-width components, each exactly `kind` bytes long, so the total field size is `1 + count * ceil(kind / 2)` words.
+
+The extraction process is:
+
+1. compute an adjusted source position from `B`, `A`, and `K`:
+    if `K` is not **FALSE**, treat `K` as an initial word offset and advance from there past `A` typed fields, measured using the typed-field sizing rules;
+    otherwise, treat `A` as a raw word offset;
+2. let the resulting position be the effective base `E`, and let the remaining word span be `S' = S - (E - B)`;
+3. if `O` is not **FALSE**, interpret `E + O` as the start of one ordinary record and operate on that record;
+4. otherwise, if `M` is not **FALSE**, first try to interpret `E` as the start of one ordinary record, and if that fails, reinterpret `E` as the start of one typed field;
+5. otherwise, if `G` is not **FALSE**, treat the first `G` raw bytes at `E` as the selected byte span;
+6. otherwise, treat `E` as starting with a leading packed field whose byte count is taken from the low byte of its first word.
+
+Once an item has been selected, the mode `M` determines the result:
+
+* mode **FALSE**: operate on the whole selected item;
+* mode `0`: return the selected item's high-byte count field;
+* mode `0xFFFF`: also returns the selected item's high-byte count field;
+* mode `n > 0`: select the `n`th component of the selected item.
+
+Whole-item mode behaves as follows:
+
+1. in ordinary-record mode, the result is the payload length in bytes, and if `D` is a usable destination of sufficient capacity, only the payload bytes are copied there;
+2. in typed-field mode, the result is the payload length in bytes, and if `D` is large enough, the destination copy includes the typed field starting at its header;
+3. in the raw-byte-span path selected by `G`, the result is exactly `G`, and those raw bytes are copied if `D` is large enough;
+4. in the leading-packed-field path, the result is the field length, and that many raw bytes are copied from the word following the length word.
+
+Component-selection mode behaves as follows:
+
+1. in ordinary-record mode, component `n` means the `n`th packed subfield of the record payload;
+2. in typed-field mode with `kind = 0`, component `n` means the `n`th packed subfield of the composite payload;
+3. in typed-field mode with `kind > 0`, component `n` means the `n`th fixed-width component, whose size is exactly `kind` bytes.
+
+In component-selection mode, the result is the selected component's byte length. If `D` is a usable destination of sufficient capacity, the selected bytes are copied there.
+
+The optional guard `G` is used in the whole-item ordinary-record path, the whole-item typed-field path, and typed-field component extraction. In those cases, if the selected byte span contains no nonzero byte, `EXTRACT` returns **FALSE** instead of copying or reporting the span.
+
+`EXTRACT` returns **FALSE** if the base handle is invalid, if the selected structure would run past the available span, if the requested component does not exist, if the leading packed field has length zero, or if a guarded selection fails the nonzero-byte test.
 
 ### `0x5F 0x38 RENAME`
 
