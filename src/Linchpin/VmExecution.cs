@@ -1000,7 +1000,7 @@ internal static class VmExecutor
 
 				if (sourceWord != 0 && sourceWord != FalseSentinel && destinationWord != 0 && destinationWord != FalseSentinel)
 				{
-					string formatted = FormatFmtrealNumericText(state, sourceWord, controlWord0, controlWord1);
+					string formatted = FormatRealAsString(state, sourceWord, controlWord0, controlWord1);
 					int capacity = state.ReadAggregateWord(destinationWord, 0);
 					int bytesToWrite = Math.Min(formatted.Length, capacity);
 					for (int index = 0; index < bytesToWrite; index++)
@@ -1017,7 +1017,7 @@ internal static class VmExecutor
 				}
 				else
 				{
-					state.Push(FormatFmtrealScalar(sourceWord, destinationWord, controlWord0, controlWord1));
+					state.Push(sourceWord);
 				}
 				break;
 			}
@@ -1367,12 +1367,7 @@ internal static class VmExecutor
 		return true;
 	}
 
-	private static ushort FormatFmtrealScalar(ushort arg0, ushort arg1, ushort arg2, ushort arg3)
-	{
-		return arg0;
-	}
-
-	private static string FormatFmtrealNumericText(VmRuntimeState state, ushort sourceHandle, ushort controlWord0, ushort controlWord1)
+	private static string FormatRealAsString(VmRuntimeState state, ushort sourceHandle, ushort controlWord0, ushort controlWord1)
 	{
 		double value = ReadReal64(state, sourceHandle);
 		int scale = controlWord0 == FalseSentinel ? -1 : unchecked((short)controlWord0);
