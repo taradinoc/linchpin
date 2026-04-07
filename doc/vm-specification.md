@@ -1338,7 +1338,7 @@ Push the inline byte value `$B`, with sign extension. (???)
 Operands: -
 Pop/Push: 0/1
 
-Push **FALSE** (`$8001`).
+Push **FALSE** (`0x8001`).
 
 ### `0x28 PUSH0`
 
@@ -1555,7 +1555,7 @@ Operands: B
 Pop/Push: 0/0
 
 Increment the local variable `$B`. The value before incrementing must not be
-FALSE (`$8001`).
+FALSE (`0x8001`).
 
 ### `0x55 RET`
 
@@ -1785,7 +1785,7 @@ Pop/Push: 1/1
 
 Delete the file whose name is the string `$1` and close any open channels to it.
 
-Push `0` on success or `$8001` on failure.
+Push `0` on success or `0x8001` on failure.
 
 ### `0x5F 0x16 POPRET`
 
@@ -1799,9 +1799,9 @@ Discard a number of words from the stack equal to the number of words returned b
 Operands: -
 Pop/Push: 0/1
 
-Poll the keyboard for input, and push a key code if a key is available, or `$8001` if no key is available.
+Poll the keyboard for input, and push a key code if a key is available, or `0x8001` if no key is available.
 
-If the value of system variable `0xC0` is nonzero, key input is ignored, and this instruction will always push `$8001`.
+If the value of system variable `0xC0` is nonzero, key input is ignored, and this instruction will always push `0x8001`.
 
 When a special key is pressed, it is exposed to the bytecode program as two key codes that must be read with two separate calls to `KBINPUT`, as described in [section 8.3](#83-keyboard-polling).
 
@@ -1930,126 +1930,131 @@ The result is `1` if `$1` is *smaller* than `$2`, and `-1` if `$1` is *greater*;
 Operands: -
 Pop/Push: 2/1
 
-vector helper deriving an offset or pointer from an indexed byte. (used to advance to the next B-tree node)
+Read the lengths of two fields from the aggregate `$2` starting at 1-based byte index `$1`, skip over those two fields, and push the resulting 1-based index.
+
+The aggregate is expected to contain the following at index `$1`:
+* A length byte `N`,
+* `N` bytes of data,
+* Another length byte `M`, and
+* `M` bytes of data.
+
+The index returned is `$1 + N + M + 2`.
 
 ### `0x5F 0x27 DECMG`
 
 Operands: B
 Pop/Push: 0/1
 
-decrement a module global and push the new value.
+Decrement module-level global variable `$B` and push the new value.
 
 ### `0x5F 0x28 DECG`
 
 Operands: B
 Pop/Push: 0/1
 
-decrement a program global and push the new value.
+Decrement global variable `$B` and push the new value.
 
 ### `0x5F 0x29 POPI`
 
 Operands: B
 Pop/Push: varies/0
 
-discard `$B` words from the stack.
+Discard `$B` words from the stack.
 
 ### `0x5F 0x2A INCG`
 
 Operands: B
 Pop/Push: 0/1
 
-increment a program global and push the new value.
+Increment global variable `$B` and push the new value.
 
 ### `0x5F 0x2B INCMG`
 
 Operands: B
 Pop/Push: 0/1
 
-increment a module global and push the new value.
+increment module-level global variable `$B` and push the new value.
 
 ### `0x5F 0x2C STOREMG`
 
 Operands: B
-Pop/Push: 0/0
+Pop/Push: 1/1
 
-store into a module global while preserving the top of stack.
+Store the word at the top of the stack into module-level global variable `$B`, leaving it on top of the stack.
 
 ### `0x5F 0x2D STOREG`
 
 Operands: B
-Pop/Push: 0/0
+Pop/Push: 1/1
 
-store into a program global while preserving the top of stack.
+Store the word at the top of the stack into global variable `$B`, leaving it on top of stack.
 
 ### `0x5F 0x2E RETN`
 
 Operands: B
 Pop/Push: varies/varies
 
-counted return; inline byte gives the number of returned words.
+Return from the current procedure, passing `$B` words from the stack back to the caller as a return value. The words are kept in the same order.
 
 ### `0x5F 0x2F PRCHAR`
 
 Operands: -
 Pop/Push: 1/0
 
-print one character without character-set translation.
+Print the character `$1` from code page 437 at the current cursor position, then move the cursor one space to the right. If the cursor is already at the right edge of the screen, it stays there.
+
+`$1` must be between `0` and `255`.
 
 ### `0x5F 0x30 UNPACK`
 
 Operands: -
 Pop/Push: 4/1
 
-unpack packed 5-bit text symbols with `$4 = source vector`, `$3 = destination vector`, `$2 = word count`, and `$1 = destination byte offset`.
+Unpack up to `$2` words of 5-bit symbols from aggregate `$4` into bytes in aggregate `$3`, starting at destination byte offset `$1`, and push either `0x8001` or the offset of the byte following the last destination byte.
+
+Each source word `W` is expanded into three destination bytes: `(W >> 10) & 0x1F`, `(W >> 5) & 0x1F`, and `W & 0x1F`. Bit 15 of the source word is treated as a stop bit. If the stop bit is reached while unpacking, bit 7 is set on the final byte and `0x8001` is pushed. If no stop bit appears in the `$2` words, bit 7 is not set, and `$1 + (3 * $2)` is pushed.
+
+This operation is reminiscent of the first step of decoding packed Z-machine text, but the interpreter doesn't perform any further translation; the unpacked values are simply zero-extended into bytes.
 
 ### `0x5F 0x34 FMTREAL`
 
 Operands: -
 Pop/Push: 4/1
 
-format 8-byte real number into a string.
+Format the floating-point number in aggregate `$4` as a string into aggregate `$3`, using `$2` as precision and `$1` as flags.
+
+If `$2` is not FALSE (`0x8001`), the number is formatted as fixed-point with exactly `$2` digits after the decimal point. No leading zero is included.
+
+Otherwise, if bit 3 (`0x08`) of `$1` is set, the number is rounded to an integer. If bit 3 is clear, the number may be formatted as either an integer, a floating-point number with up to 15 digits after the potential decimal point, or a number in scientific notation with up to 15 significant digits, depending on its value.
 
 ### `0x5F 0x35 PRSREAL`
 
 Operands: -
 Pop/Push: 6/1
 
-parse numeric text into an 8-byte real buffer.
+Parse a floating-point number from a string into an 8-byte real buffer, and push the destination address or FALSE.
 
-`$6` is the source text vector, `$5` is the destination 8-byte real buffer,
+`$6` is the source text aggregate, `$5` is the destination 8-byte real buffer,
 `$4` is the source byte count, `$3` is a source offset, `$2` is an option word,
-and `$1` is a small result vector.
+and `$1` is the address of a result word.
 
-`PRSREAL` accepts the same numeric surface forms described in the Cornerstone
-manual: plain integers, fixed-point decimals, `$`-prefixed amounts, numbers
-containing comma group separators, scientific notation using `E` or `e`, a
-leading minus sign, and accounting-style negatives written in parentheses.
-Examples include `123`, `420.69`, `.99`, `$99.95`, `1,000`, `2.99e5`, `-16.5`,
-and `(9.95)`. The parser stops at the first non-numeric character, so forms
-like `10%` produce a valid numeric prefix (`10`) plus trailing junk; callers are
-expected to reject that case by comparing the consumed count with the supplied
-source length.
+`PRSREAL` accepts the same numeric forms described in the Cornerstone manual: plain integers, fixed-point decimals, `$`-prefixed amounts, numbers containing comma group separators, scientific notation using `E` or `e`, a leading minus sign, and accounting-style negatives written in parentheses. Examples include `123`, `123.45`, `.99`, `$99.95`, `1,000`, `2.99e5`, `-16.5`, and `(9.95)`.
 
-On success, `PRSREAL` writes the parsed real value into `$5`, writes the number
-of consumed source characters into payload byte `$1[0]`, writes a status byte
-into payload byte `$1[1]`, and pushes `$5`.
+The parser stops after it finds a numeric prefix. Strings like `10%` produce a valid numeric prefix (`10`) plus trailing junk; callers may detect that case by comparing the consumed count with the supplied source length.
 
-On failure, it still writes the consumed count into payload byte `$1[0]`, writes
-an error/status code into payload byte `$1[1]`, and pushes `FALSE`.
+On success, `PRSREAL` writes the parsed real value into `real($5)`, writes the number
+of consumed source characters into result byte `$1[0]`, writes a status byte
+into result byte `$1[1]`, and pushes `$5`.
 
-Observed result/status byte meanings:
+On failure, it still writes the consumed count into result byte `$1[0]`, writes
+an error/status code into result byte `$1[1]`, and pushes `FALSE`.
 
-- `0x01`: normal successful parse. If `$1[0]` is smaller than the supplied
-    source length, the caller should treat the remaining characters as
-    extraneous input.
-- `0x02`: an exponent marker (`E` or `e`) was seen, but no exponent digits
-    followed it.
+The error/status codes include:
 
-The native code also distinguishes a failure case for “no significand digits
-were seen”, but the exact externally visible status byte for that case is still
-unresolved.
+- `0x01`: normal successful parse.
+- `0x02`: an exponent marker (`E` or `e`) was seen, but no exponent digits followed it.
 
-The shipped program calls observed so far pass `$3 = 0` and `$2 = FALSE`.
+Additional error/status codes may exist. Any code other than `0x01` indicates failure.
 
 ### `0x5F 0x36 LOOKUP`
 
