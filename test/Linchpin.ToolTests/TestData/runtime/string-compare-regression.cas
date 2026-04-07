@@ -24,12 +24,12 @@ STR_OFFSET::
 STR_OFFSET_TARGET::
 .string "BC"
 
-; Structured sort key aggregates for STRCMP tests.
+; Structured sort key aggregates for KEYCMP tests.
 ; Format: byte0=record_index, byte1=total_field_bytes, bytes2-5=link+descriptor,
 ;         byte6=field_length, bytes7+=field_data.
 ; ReadAggregateByte(handle, -1) = byte1 = total field byte count.
 ; ReadAggregateByte(handle, 4) = byte6 = first sub-key length.
-; ReadAggregateByte(handle, 5+) = field data bytes compared by STRCMP.
+; ReadAggregateByte(handle, 5+) = field data bytes compared by KEYCMP.
 SORT_KEY_LOW::
 .byte 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x42, 0x00
 
@@ -134,37 +134,37 @@ test_stricmp_offset:
     STRICMP
     PUTL 0
     PUSHL 0
-	JUMPZ test_strcmp_plain_string
+	JUMPZ test_keycmp_plain_string
     JUMP fail6
 
-test_strcmp_plain_string:
-    ; STRCMP on plain Pascal strings: both have payload[-1]=0 (remaining=0),
+test_keycmp_plain_string:
+    ; KEYCMP on plain Pascal strings: both have payload[-1]=0 (remaining=0),
     ; so MME returns 0 (equal) per the structured comparison algorithm.
     PUSHW STR_LOW
     PUSHW STR_HIGH
-    STRCMP
+    KEYCMP
     PUTL 0
 	PUSHL 0
-	JUMPZ test_strcmp_lt
+	JUMPZ test_keycmp_lt
 	JUMP fail7
 
-test_strcmp_lt:
+test_keycmp_lt:
 	PUSHW SORT_KEY_LOW
 	PUSHW SORT_KEY_HIGH
-	STRCMP
+	KEYCMP
 	PUTL 0
     PUSHL 0
     JUMPZ fail8
     PUSHL 0
     PUSH1
     ADD
-	JUMPZ test_strcmp_gt
+	JUMPZ test_keycmp_gt
 	JUMP fail8
 
-test_strcmp_gt:
+test_keycmp_gt:
 	PUSHW SORT_KEY_HIGH
 	PUSHW SORT_KEY_LOW
-    STRCMP
+    KEYCMP
     PUTL 0
     PUSHL 0
 	JUMPZ fail9

@@ -21,10 +21,10 @@
 .global FAIL_REAL=FAIL_REAL, SUMMARY_PASS=SUMMARY_PASS
 .global SUMMARY_FAIL=SUMMARY_FAIL
 .global CMP_HEADER=CMP_HEADER, CMP_STRICMP_LABEL=CMP_STRICMP_LABEL
-.global CMP_STRCMP_LABEL=CMP_STRCMP_LABEL, CMP_MEMCMP_LABEL=CMP_MEMCMP_LABEL
+.global CMP_KEYCMP_LABEL=CMP_KEYCMP_LABEL, CMP_MEMCMP_LABEL=CMP_MEMCMP_LABEL
 .global CMP_MEMCMPO_LABEL=CMP_MEMCMPO_LABEL
 .global STR_CMP_LOW=STR_CMP_LOW, STR_CMP_HIGH=STR_CMP_HIGH
-.global RAW_STRCMP_LOW2=RAW_STRCMP_LOW2, STR_CMP_LOW2=STR_CMP_LOW2
+.global RAW_KEYCMP_LOW2=RAW_KEYCMP_LOW2, STR_CMP_LOW2=STR_CMP_LOW2
 
 SUITE_TITLE::
 .string "Cornerstone VM"
@@ -149,7 +149,7 @@ CMP_HEADER::
 CMP_STRICMP_LABEL::
 .string "SIC "
 
-CMP_STRCMP_LABEL::
+CMP_KEYCMP_LABEL::
 .string "SCM "
 
 CMP_MEMCMP_LABEL::
@@ -175,14 +175,14 @@ STR_CMP_LOW::
 STR_CMP_HIGH::
 .string "AC"
 
-; Structured sort key aggregates for STRCMP.
+; Structured sort key aggregates for KEYCMP.
 ; payload[-1] (raw byte 1) = total field byte count.
 ; payload[4] (raw byte 6) = first sub-key length.
 ; payload[5+] = sub-key data bytes.
-RAW_STRCMP_LOW::
+RAW_KEYCMP_LOW::
 .byte 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x42, 0x00
 
-RAW_STRCMP_LOW2::
+RAW_KEYCMP_LOW2::
 .byte 0x02, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x42, 0x00
 
 STR_CMP_LOW2::
@@ -257,7 +257,7 @@ REAL_FMT_MINUS_DECIMAL::
 REAL_FMT_PARENS_DECIMAL::
 .string "-99.95"
 
-RAW_STRCMP_HIGH::
+RAW_KEYCMP_HIGH::
 .byte 0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x43, 0x00
 
 .program_globals 0x0000
@@ -1158,9 +1158,9 @@ test_tuple_pass:
     STRICMP
     JUMPNZ test_string_fail
 
-    PUSHW RAW_STRCMP_LOW
-    PUSHW RAW_STRCMP_HIGH
-    STRCMP
+    PUSHW RAW_KEYCMP_LOW
+    PUSHW RAW_KEYCMP_HIGH
+    KEYCMP
     PUSHW 0xFFFF
     JUMPNE test_string_fail
 
@@ -1559,7 +1559,7 @@ assert_fmtreal_fail:
 ; PrintCompareValues — prints the actual return value for each comparison
 ; opcode in the LT, EQ, and GT cases.  Four rows, one per opcode family:
 ;   row 0x11  SIC  xxxx xxxx xxxx   (STRICMP)
-;   row 0x12  SCM  xxxx xxxx xxxx   (STRCMP)
+;   row 0x12  SCM  xxxx xxxx xxxx   (KEYCMP)
 ;   row 0x13  MCM  xxxx xxxx xxxx   (MEMCMP)
 ;   row 0x14  MCO  xxxx xxxx xxxx   (MEMCMPO)
 ; xxxx is the raw 16-bit value pushed by the opcode, printed as hex.
@@ -1604,31 +1604,31 @@ assert_fmtreal_fail:
     CALL1 PrintHex4
     POP
 
-    ; --- STRCMP row (0x12) ---
-    PUSHW CMP_STRCMP_LABEL
+    ; --- KEYCMP row (0x12) ---
+    PUSHW CMP_KEYCMP_LABEL
     PUSHW 0x0012
     CALL2 PrintAt
 
-    ; STRCMP LT: RAW_LOW < RAW_HIGH
-    PUSHW RAW_STRCMP_LOW
-    PUSHW RAW_STRCMP_HIGH
-    STRCMP
+    ; KEYCMP LT: RAW_LOW < RAW_HIGH
+    PUSHW RAW_KEYCMP_LOW
+    PUSHW RAW_KEYCMP_HIGH
+    KEYCMP
     CALL1 PrintHex4
     POP
     CALL0 PrintSpace
 
-    ; STRCMP EQ: RAW_LOW = RAW_LOW2 (distinct handles, same content)
-    PUSHW RAW_STRCMP_LOW
-    PUSHW RAW_STRCMP_LOW2
-    STRCMP
+    ; KEYCMP EQ: RAW_LOW = RAW_LOW2 (distinct handles, same content)
+    PUSHW RAW_KEYCMP_LOW
+    PUSHW RAW_KEYCMP_LOW2
+    KEYCMP
     CALL1 PrintHex4
     POP
     CALL0 PrintSpace
 
-    ; STRCMP GT: RAW_HIGH > RAW_LOW
-    PUSHW RAW_STRCMP_HIGH
-    PUSHW RAW_STRCMP_LOW
-    STRCMP
+    ; KEYCMP GT: RAW_HIGH > RAW_LOW
+    PUSHW RAW_KEYCMP_HIGH
+    PUSHW RAW_KEYCMP_LOW
+    KEYCMP
     CALL1 PrintHex4
     POP
 
