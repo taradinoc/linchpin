@@ -1,6 +1,6 @@
 # Cornerstone Virtual Machine Specification
 
-## Version 0.1
+## Version 0.2
 
 *Tara McGrew*\
 *March&ndash;April 2026*
@@ -2003,19 +2003,32 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 ---
 
 
-## Appendix A. Table of Opcodes
+## Appendix A. Opcode Summary Table
 
 ### A.1 General Notes
 
 1. Base opcodes are listed in numeric order.
 2. Extended opcodes are written as `0x5F xx`.
-3. Packed families are described as opcode ranges.
-4. Stack notation uses the convention: `$1` is the top word on the stack (last pushed), `$2` is the next word down (previously pushed), and so on.
-5. Floating-point arguments are written as `real($1)`, meaning "the floating-point number at the address `$1`".
-6. In the `Operands` column below, `-` means no inline operands, `B` means one byte, `W` means one word, `WW` means two words, and `J` means a mixed jump encoding that is either one byte or a byte followed by a word.
-7. In the `Pops` and `Pushes` columns below, `varies` means the exact number of values popped or pushed depends on an operand, an argument from the stack, or the number of values returned by a called procedure.
+3. Packed families are described as opcode ranges. Each packed-family opcode
+   encodes the complete instruction in a single byte; there are no following
+   inline operand bytes. See §5.4 for the bit-field assignments within each
+   family.
+4. `$N` denotes the Nth word from the top of the evaluation stack at the time
+   the instruction executes: `$1` is the top word (the last word pushed), `$2`
+   is the next word down, and so on for `$3`, `$4`, …, `$N`.
+5. Floating-point arguments are written as `real($1)`, meaning the 8-byte real
+   number whose 4-word representation begins at logical address `$1` (see §4.7
+   for the format).
+6. In the `Operands` column, `-` means no inline operands, `B` means one
+   inline byte, `W` means one inline word, `WW` means two inline words, and
+   `J` means a mixed jump-target encoding (see §5.3.2).
+7. In the `Pops` and `Pushes` columns, `varies` means the exact count depends
+   on an inline operand, a value on the evaluation stack, or the number of
+   values returned by a called procedure.
 
-### A.2 Base Opcodes `0x00-0x10`
+---
+
+### A.2 Base Opcodes `0x00–0x10`
 
 | Opcode | Mnemonic | Operands | Pops | Pushes | Description |
 | --- | --- | --- | ---: | ---: | --- |
@@ -2026,7 +2039,7 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 | 0x04 | [`DIV`](#0x04-div) | `-` | 2 | 1 | push `$2 / $1`. |
 | 0x05 | [`MOD`](#0x05-mod) | `-` | 2 | 1 | push `$2 mod $1`. |
 | 0x06 | [`NEG`](#0x06-neg) | `-` | 1 | 1 | push `-$1`. |
-| 0x07 | [`ASHIFT`](#0x07-ashift) | `-` | 2 | 1 | push `$2` arithmetically shifted by `$1` bits. Positive counts shift left; negative counts shift right with sign extension. |
+| 0x07 | [`ASHIFT`](#0x07-ashift) | `-` | 2 | 1 | push `$2` arithmetically shifted by `$1` bits; positive counts shift left, negative counts shift right with sign extension. |
 | 0x08 | [`INCL`](#0x08-incl) | `B` | 0 | 1 | increment local `$B` and push the new value. |
 | 0x09 | [`PUSH8`](#0x09-push8) | `-` | 0 | 1 | push constant `8`. |
 | 0x0A | [`PUSH4`](#0x0a-push4) | `-` | 0 | 1 | push constant `4`. |
@@ -2035,31 +2048,35 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 | 0x0D | [`PUSH3`](#0x0d-push3) | `-` | 0 | 1 | push constant `3`. |
 | 0x0E | [`AND`](#0x0e-and) | `-` | 2 | 1 | bitwise AND. |
 | 0x0F | [`OR`](#0x0f-or) | `-` | 2 | 1 | bitwise OR. |
-| 0x10 | [`SHIFT`](#0x10-shift) | `-` | 2 | 1 | push `$2` logically shifted by `$1` bits. Positive counts shift left; negative counts shift right with zero extension. |
+| 0x10 | [`SHIFT`](#0x10-shift) | `-` | 2 | 1 | push `$2` logically shifted by `$1` bits; positive counts shift left, negative counts shift right with zero extension. |
 
-### A.3 Base Opcodes `0x11-0x21`
+---
+
+### A.3 Base Opcodes `0x11–0x21`
 
 | Opcode | Mnemonic | Operands | Pops | Pushes | Description |
 | --- | --- | --- | ---: | ---: | --- |
-| 0x11 | [`VALLOC`](#0x11-valloc) | `-` | 1 | 1 | allocate a vector with `$1` visible words and push its handle. |
+| 0x11 | [`VALLOC`](#0x11-valloc) | `-` | 1 | 1 | allocate a vector with `$1` total words and push its handle. |
 | 0x12 | [`VALLOCI`](#0x12-valloci) | `-` | varies | 1 | pop `$1 = word count`, then pop that many initializer words and allocate a vector containing them in original push order. |
-| 0x13 | [`VFREE`](#0x13-vfree) | `-` | 2 | 0 | free the managed vector block identified by `$2`, using `$1` as the size in words. |
+| 0x13 | [`VFREE`](#0x13-vfree) | `-` | 2 | 0 | free the vector identified by handle `$2`, using `$1` as the size in words. |
 | 0x14 | [`TALLOC`](#0x14-talloc) | `-` | 1 | 1 | allocate a tuple with `$1` visible words and push its handle. |
 | 0x15 | [`TALLOCI`](#0x15-talloci) | `-` | varies | 1 | pop `$1 = word count`, then pop that many initializer words and allocate a tuple containing them in original push order. |
-| 0x16 | [`VLOADW`](#0x16-vloadw) | `-` | 2 | 1 | load a word from handle `$2` using dynamic 1-based index `$1`. |
+| 0x16 | [`VLOADW`](#0x16-vloadw) | `-` | 2 | 1 | load a word from handle `$2` at 1-based word index `$1`; index 1 addresses the first word of the aggregate (no length-word skip). |
 | 0x17 | [`VLOADB`](#0x17-vloadb) | `-` | 2 | 1 | load a byte from handle `$2` using dynamic 1-based byte index `$1`. |
-| 0x18 | [`VLOADW_`](#0x18-vloadw_) | `B` | 1 | 1 | load a word from handle `$1` using the inline zero-based slot index. |
+| 0x18 | [`VLOADW_`](#0x18-vloadw_) | `B` | 1 | 1 | load a word from handle `$1` using the inline zero-based word offset. |
 | 0x19 | [`VLOADB_`](#0x19-vloadb_) | `B` | 1 | 1 | load a byte from handle `$1` using the inline zero-based byte index. |
-| 0x1A | [`VPUTW`](#0x1a-vputw) | `-` | 3 | 0 | store `$1` into handle `$3` at dynamic 1-based word index `$2`. |
+| 0x1A | [`VPUTW`](#0x1a-vputw) | `-` | 3 | 0 | store `$1` into handle `$3` at 1-based word index `$2`; index 1 addresses the first word of the aggregate (no length-word skip). |
 | 0x1B | [`VPUTB`](#0x1b-vputb) | `-` | 3 | 0 | store the low byte of `$1` into handle `$3` at dynamic 1-based byte index `$2`. |
-| 0x1C | [`VPUTW_`](#0x1c-vputw_) | `B` | 2 | 0 | store `$1` into handle `$2` at the inline zero-based word slot. |
+| 0x1C | [`VPUTW_`](#0x1c-vputw_) | `B` | 2 | 0 | store `$1` into handle `$2` at the inline zero-based word offset. |
 | 0x1D | [`VPUTB_`](#0x1d-vputb_) | `B` | 2 | 0 | store the low byte of `$1` into handle `$2` at the inline zero-based byte index. |
-| 0x1E | [`VECSETW`](#0x1e-vecsetw) | `-` | 3 | 1 | fill handle `$3` with `$2` words of value `$1`, then leave that handle on the stack. |
-| 0x1F | [`VECSETB`](#0x1f-vecsetb) | `-` | 3 | 1 | fill handle `$3` with `$2` bytes of value `low8($1)`, then leave that handle on the stack. |
-| 0x20 | [`VECCPYW`](#0x20-veccpyw) | `-` | 3 | 1 | copy `$2` words from source handle `$3` to destination handle `$1`, then leave the destination handle on the stack. |
-| 0x21 | [`VECCPYB`](#0x21-veccpyb) | `-` | 5 | 1 | copy `$4` bytes from source handle `$5` at byte offset `$2` to destination handle `$3` at byte offset `$1`, then leave the destination handle on the stack. |
+| 0x1E | [`VECSETW`](#0x1e-vecsetw) | `-` | 3 | 1 | fill handle `$3` with `$2` words of value `$1` and leave that handle on the evaluation stack. |
+| 0x1F | [`VECSETB`](#0x1f-vecsetb) | `-` | 3 | 1 | fill handle `$3` with `$2` bytes of value `low8($1)` and leave that handle on the evaluation stack. |
+| 0x20 | [`VECCPYW`](#0x20-veccpyw) | `-` | 3 | 1 | copy `$2` words from source handle `$3` to destination handle `$1` and leave the destination handle on the evaluation stack. |
+| 0x21 | [`VECCPYB`](#0x21-veccpyb) | `-` | 5 | 1 | copy `$4` bytes from source handle `$5` at byte offset `$2` to destination handle `$3` at byte offset `$1` and leave the destination handle on the evaluation stack. |
 
-### A.4 Base Opcodes `0x22-0x2F`
+---
+
+### A.4 Base Opcodes `0x22–0x2F`
 
 | Opcode | Mnemonic | Operands | Pops | Pushes | Description |
 | --- | --- | --- | ---: | ---: | --- |
@@ -2070,35 +2087,39 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 | 0x26 | [`PUSHB`](#0x26-pushb) | `B` | 0 | 1 | push an inline byte as a word-sized value. |
 | 0x27 | [`PUSH_NIL`](#0x27-push_nil) | `-` | 0 | 1 | push **FALSE**. |
 | 0x28 | [`PUSH0`](#0x28-push0) | `-` | 0 | 1 | push constant `0`. |
-| 0x29 | [`DUP`](#0x29-dup) | `-` | 0 | 1 | duplicate the top stack word. |
+| 0x29 | [`DUP`](#0x29-dup) | `-` | 0 | 1 | duplicate the top word of the evaluation stack. |
 | 0x2A | [`PUSHm8`](#0x2A-PUSHm8) | `-` | 0 | 1 | push constant `0xFFF8`. |
 | 0x2B | [`PUSH5`](#0x2b-push5) | `-` | 0 | 1 | push constant `5`. |
 | 0x2C | [`PUSH1`](#0x2c-push1) | `-` | 0 | 1 | push constant `1`. |
-| 0x2D | [`PUTMG`](#0x2d-putmg) | `B` | 1 | 0 | store the top stack word into a module global by byte index. |
+| 0x2D | [`PUTMG`](#0x2d-putmg) | `B` | 1 | 0 | store the top word of the evaluation stack into a module global by byte index. |
 | 0x2E | [`PUSHFF`](#0x2e-pushff) | `-` | 0 | 1 | push constant `0x00FF`. |
-| 0x2F | [`POP`](#0x2f-pop) | `-` | 1 | 0 | discard the top stack word. |
+| 0x2F | [`POP`](#0x2f-pop) | `-` | 1 | 0 | discard the top word of the evaluation stack. |
 
-### A.5 Base Opcodes `0x30-0x3E`
+---
+
+### A.5 Base Opcodes `0x30–0x3E`
 
 | Opcode | Mnemonic | Operands | Pops | Pushes | Description |
 | --- | --- | --- | ---: | ---: | --- |
-| 0x30 | [`JUMP`](#0x30-jump) | J | 0 | 0 | unconditional branch. A nonzero inline byte denotes a signed relative jump; zero denotes an absolute 16-bit target in the following word. |
-| 0x31 | [`JUMPZ`](#0x31-jumpz) | J | 1 | 0 | jump if `$1 == 0`. |
-| 0x32 | [`JUMPNZ`](#0x32-jumpnz) | J | 1 | 0 | jump if `$1 != 0`. |
-| 0x33 | [`JUMPF`](#0x33-jumpf) | J | 1 | 0 | jump if `$1 == FALSE`. |
-| 0x34 | [`JUMPNF`](#0x34-jumpnf) | J | 1 | 0 | jump if `$1 != FALSE`. |
-| 0x35 | [`JUMPGZ`](#0x35-jumpgz) | J | 1 | 0 | jump if `$1 > 0`. |
-| 0x36 | [`JUMPLEZ`](#0x36-jumplez) | J | 1 | 0 | jump if `$1 <= 0`. |
-| 0x37 | [`JUMPLZ`](#0x37-jumplz) | J | 1 | 0 | jump if `$1 < 0`. |
-| 0x38 | [`JUMPGEZ`](#0x38-jumpgez) | J | 1 | 0 | jump if `$1 >= 0`. |
-| 0x39 | [`JUMPL`](#0x39-jumpl) | J | 2 | 0 | jump if `$2 < $1`. |
-| 0x3A | [`JUMPLE`](#0x3a-jumple) | J | 2 | 0 | jump if `$2 <= $1`. |
-| 0x3B | [`JUMPGE`](#0x3b-jumpge) | J | 2 | 0 | jump if `$2 >= $1`. |
-| 0x3C | [`JUMPG`](#0x3c-jumpg) | J | 2 | 0 | jump if `$2 > $1`. |
-| 0x3D | [`JUMPEQ`](#0x3d-jumpeq) | J | 2 | 0 | jump if `$2 == $1` |
-| 0x3E | [`JUMPNE`](#0x3e-jumpne) | J | 2 | 0 | jump if `$2 != $1` |
+| 0x30 | [`JUMP`](#0x30-jump) | `J` | 0 | 0 | unconditional branch. A nonzero inline byte denotes a signed relative jump; zero denotes an absolute 16-bit target in the following word. |
+| 0x31 | [`JUMPZ`](#0x31-jumpz) | `J` | 1 | 0 | jump if `$1 == 0`. |
+| 0x32 | [`JUMPNZ`](#0x32-jumpnz) | `J` | 1 | 0 | jump if `$1 != 0`. |
+| 0x33 | [`JUMPF`](#0x33-jumpf) | `J` | 1 | 0 | jump if `$1 == FALSE`. |
+| 0x34 | [`JUMPNF`](#0x34-jumpnf) | `J` | 1 | 0 | jump if `$1 != FALSE`. |
+| 0x35 | [`JUMPGZ`](#0x35-jumpgz) | `J` | 1 | 0 | jump if `$1 > 0`. |
+| 0x36 | [`JUMPLEZ`](#0x36-jumplez) | `J` | 1 | 0 | jump if `$1 <= 0`. |
+| 0x37 | [`JUMPLZ`](#0x37-jumplz) | `J` | 1 | 0 | jump if `$1 < 0`. |
+| 0x38 | [`JUMPGEZ`](#0x38-jumpgez) | `J` | 1 | 0 | jump if `$1 >= 0`. |
+| 0x39 | [`JUMPL`](#0x39-jumpl) | `J` | 2 | 0 | jump if `$2 < $1`. |
+| 0x3A | [`JUMPLE`](#0x3a-jumple) | `J` | 2 | 0 | jump if `$2 <= $1`. |
+| 0x3B | [`JUMPGE`](#0x3b-jumpge) | `J` | 2 | 0 | jump if `$2 >= $1`. |
+| 0x3C | [`JUMPG`](#0x3c-jumpg) | `J` | 2 | 0 | jump if `$2 > $1`. |
+| 0x3D | [`JUMPEQ`](#0x3d-jumpeq) | `J` | 2 | 0 | jump if `$2 == $1`. |
+| 0x3E | [`JUMPNE`](#0x3e-jumpne) | `J` | 2 | 0 | jump if `$2 != $1`. |
 
-### A.6 Base Opcodes `0x3F-0x4F`
+---
+
+### A.6 Base Opcodes `0x3F–0x4F`
 
 | Opcode | Mnemonic | Operands | Pops | Pushes | Description |
 | --- | --- | --- | ---: | ---: | --- |
@@ -2106,21 +2127,23 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 | 0x40 | [`CALL1`](#0x40-call1) | `W` | 1 | varies | near call with one explicit argument. |
 | 0x41 | [`CALL2`](#0x41-call2) | `W` | 2 | varies | near call with two explicit arguments. |
 | 0x42 | [`CALL3`](#0x42-call3) | `W` | 3 | varies | near call with three explicit arguments. |
-| 0x43 | [`CALL`](#0x43-call) | `B` | varies | varies | computed near call; inline byte gives argument count. |
+| 0x43 | [`CALL`](#0x43-call) | `B` | varies | varies | computed near call; inline byte gives the argument count. |
 | 0x44 | [`CALLF0`](#0x44-callf0) | `W` | 0 | varies | far call with zero explicit arguments. |
 | 0x45 | [`CALLF1`](#0x45-callf1) | `W` | 1 | varies | far call with one explicit argument. |
 | 0x46 | [`CALLF2`](#0x46-callf2) | `W` | 2 | varies | far call with two explicit arguments. |
 | 0x47 | [`CALLF3`](#0x47-callf3) | `W` | 3 | varies | far call with three explicit arguments. |
-| 0x48 | [`CALLF`](#0x48-callf) | `B` | varies | varies | computed far call; inline byte gives argument count. |
+| 0x48 | [`CALLF`](#0x48-callf) | `B` | varies | varies | computed far call; inline byte gives the argument count. |
 | 0x49 | [`RETURN`](#0x49-return) | `-` | 1 | 1 | return `$1` to the caller as a one-word result. |
 | 0x4A | [`RFALSE`](#0x4a-rfalse) | `-` | 0 | 1 | return **FALSE**. |
 | 0x4B | [`RZERO`](#0x4b-rzero) | `-` | 0 | 1 | return `0`. |
 | 0x4C | [`PUSH6`](#0x4c-push6) | `-` | 0 | 1 | push constant `6`. |
 | 0x4D | [`HALT`](#0x4d-halt) | `W` | 0 | 0 | terminate execution with an inline word argument. |
-| 0x4E | [`NEXTB`](#0x4e-nextb) | `-` | 0 | 0 | advance to the next 256-byte code block. |
+| 0x4E | [`NEXTB`](#0x4e-nextb) | `-` | 0 | 0 | advance execution to the next 256-byte code block (see §5.2). |
 | 0x4F | [`PUSH7`](#0x4f-push7) | `-` | 0 | 1 | push constant `7`. |
 
-### A.7 Base Opcodes `0x50-0x5E`
+---
+
+### A.7 Base Opcodes `0x50–0x5E`
 
 | Opcode | Mnemonic | Operands | Pops | Pushes | Description |
 | --- | --- | --- | ---: | ---: | --- |
@@ -2128,17 +2151,19 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 | 0x51 | [`LOADVB2`](#0x51-loadvb2) | `-` | 2 | 1 | load a raw byte from handle `$2` using alternate 1-based byte index `$1`. |
 | 0x52 | [`PUTVB2`](#0x52-putvb2) | `-` | 3 | 0 | store the low byte of `$1` into handle `$3` using the alternate 1-based byte index `$2`. |
 | 0x53 | [`REST`](#0x53-rest) | `-` | 2 | 1 | alias encoding of `ADD`. |
-| 0x54 | [`INCLV`](#0x54-inclv) | `B` | 0 | 0 | increment a local selected by inline byte operand without pushing the new value. Dereferencing **FALSE** traps. |
+| 0x54 | [`INCLV`](#0x54-inclv) | `B` | 0 | 0 | increment a local selected by the inline byte operand without pushing the new value; the local's value must not be **FALSE** (see §1.5.1). |
 | 0x55 | [`RET`](#0x55-ret) | `-` | 0 | 0 | return no pushed result. |
-| 0x56 | [`PUTL`](#0x56-putl) | `B` | 1 | 0 | store the top stack word into local `$B`. |
+| 0x56 | [`PUTL`](#0x56-putl) | `B` | 1 | 0 | store the top word of the evaluation stack into local `$B`. |
 | 0x57 | [`PUSHL`](#0x57-pushl) | `B` | 0 | 1 | push local `$B`. |
-| 0x58 | [`STOREL`](#0x58-storel) | `B` | 0 | 0 | copy the top stack word into local `$B` while preserving it on the stack. |
-| 0x59 | [`BITSVL`](#0x59-bitsvl) | `W` | 0 | 1 | extract a bitfield from a vector word using an inline control word and a vector handle held in a local. |
-| 0x5A | [`BITSV`](#0x5a-bitsv) | `W` | 1 | 1 | extract a bitfield from a vector word using an inline control word and a vector handle from the stack. |
-| 0x5B | [`BBSETVL`](#0x5b-bbsetvl) | `W` | 1 | 0 | replace a multi-bit field inside a vector word using a local-held vector handle. |
-| 0x5C | [`BBSETV`](#0x5c-bbsetv) | `W` | 2 | 0 | replace a multi-bit field inside a vector word using a stack-held vector handle. |
-| 0x5D | [`BSETVL`](#0x5d-bsetvl) | `W` | 0 | 0 | set or clear one bit in a vector word using a local-held vector handle. |
-| 0x5E | [`BSETV`](#0x5e-bsetv) | `W` | 1 | 0 | set or clear one bit in a vector word using a stack-held vector handle. |
+| 0x58 | [`STOREL`](#0x58-storel) | `B` | 0 | 0 | copy the top word of the evaluation stack into local `$B` without consuming it. |
+| 0x59 | [`BITSVL`](#0x59-bitsvl) | `W` | 0 | 1 | extract a bitfield from an aggregate word using an inline control word and an aggregate handle held in a local. |
+| 0x5A | [`BITSV`](#0x5a-bitsv) | `W` | 1 | 1 | extract a bitfield from an aggregate word using an inline control word and an aggregate handle from the evaluation stack. |
+| 0x5B | [`BBSETVL`](#0x5b-bbsetvl) | `W` | 1 | 0 | replace a multi-bit field inside an aggregate word using a local-held aggregate handle. |
+| 0x5C | [`BBSETV`](#0x5c-bbsetv) | `W` | 2 | 0 | replace a multi-bit field inside an aggregate word using an aggregate handle from the evaluation stack. |
+| 0x5D | [`BSETVL`](#0x5d-bsetvl) | `W` | 0 | 0 | set or clear one bit in an aggregate word using a local-held aggregate handle. |
+| 0x5E | [`BSETV`](#0x5e-bsetv) | `W` | 1 | 0 | set or clear one bit in an aggregate word using an aggregate handle from the evaluation stack. |
+
+---
 
 ### A.8 Extended Opcodes `0x5F xx`
 
@@ -2148,65 +2173,67 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 | 0x5F 0x02 | [`NOT`](#0x5f-0x02-not) | `-` | 1 | 1 | bitwise complement. |
 | 0x5F 0x03 | [`ROTATE`](#0x5f-0x03-rotate) | `-` | 2 | 1 | rotate `$2` by `$1` bit positions and push the rotated word. |
 | 0x5F 0x04 | [`VFIND`](#0x5f-0x04-vfind) | `-` | 3 | 1 | vector search operation returning an index or **FALSE**. |
-| 0x5F 0x05 | [`STRCHR`](#0x5f-0x05-strchr) | `-` | 2 | 1 | search VM string handle `$1` for character `low8($2)` and return the found index or **FALSE**. |
+| 0x5F 0x05 | [`STRCHR`](#0x5f-0x05-strchr) | `-` | 2 | 1 | search string handle `$1` for character `low8($2)` and push the found index or **FALSE**. |
 | 0x5F 0x06 | [`PUTG`](#0x5f-0x06-putg) | `B` | 1 | 0 | store into a program global by byte index. |
-| 0x5F 0x07 | [`POPN`](#0x5f-0x07-popn) | `-` | varies | 0 | variable-sized stack drop. |
-| 0x5F 0x09 | [`LONGJMPR`](#0x5f-0x09-longjmpr) | `-` | 2 | 1 | non-local jump through saved state `$2`, returning `$1` at the restored landing point. |
-| 0x5F 0x0A | [`LONGJMP`](#0x5f-0x0a-longjmp) | `-` | 1 | 0 | non-local jump through saved state `$1` with no explicit return value. |
-| 0x5F 0x0B | [`SETJMP`](#0x5f-0x0b-setjmp) | `WW` | 0 | 1 | save non-local control state. |
-| 0x5F 0x0C | [`OPEN`](#0x5f-0x0c-open) | `B` | 0 | 1 | open or attach a logical channel. The inline byte is the mode bitfield defined in section 8.3. |
-| 0x5F 0x0D | [`CLOSE`](#0x5f-0x0d-close) | `-` | 1 | 1 | close a channel-like value and return a status result. |
-| 0x5F 0x0E | [`READ`](#0x5f-0x0e-read) | `-` | 3 | 1 | read `$1` words from channel `$2` into vector `$3`, beginning at visible word slot `1`. |
-| 0x5F 0x0F | [`WRITE`](#0x5f-0x0f-write) | `-` | 3 | 1 | write `$1` words from vector `$3` to channel `$2`, beginning at visible word slot `1`. |
-| 0x5F 0x10 | [`READREC`](#0x5f-0x10-readrec) | `-` | 4 | 1 | read `$1` records from channel `$3` starting at record `$2` into the byte payload of vector `$4`. |
-| 0x5F 0x11 | [`WRITEREC`](#0x5f-0x11-writerec) | `-` | 4 | 1 | write `$1` records from the byte payload of vector `$4` to channel `$3` starting at record `$2`. |
-| 0x5F 0x12 | [`DISP`](#0x5f-0x12-disp) | `B` | 0 | 0 | display-control suboperation selected by inline byte. |
-| 0x5F 0x13 | [`XDISP`](#0x5f-0x13-xdisp) | `B` | 1 | 1 | extended display-control suboperation selected by inline byte. |
+| 0x5F 0x07 | [`POPN`](#0x5f-0x07-popn) | `-` | varies | 0 | discard a variable number of words from the evaluation stack. |
+| 0x5F 0x09 | [`LONGJMPR`](#0x5f-0x09-longjmpr) | `-` | 2 | 1 | non-local jump through **activation token** `$2`, restoring execution state and pushing `$1` as the return value (see §6.7). |
+| 0x5F 0x0A | [`LONGJMP`](#0x5f-0x0a-longjmp) | `-` | 1 | 0 | non-local jump through **activation token** `$1` with no explicit return value (see §6.7). |
+| 0x5F 0x0B | [`SETJMP`](#0x5f-0x0b-setjmp) | `WW` | 0 | 1 | save execution state into an **activation record** and push the **activation token**; the two inline words are procedure offsets encoding the resume targets (see §6.7). |
+| 0x5F 0x0C | [`OPEN`](#0x5f-0x0c-open) | `B` | 2 | 1 | open or attach a logical channel; the inline byte is the mode bitfield (see §8.1.2). |
+| 0x5F 0x0D | [`CLOSE`](#0x5f-0x0d-close) | `-` | 1 | 1 | close a channel and return a status result. |
+| 0x5F 0x0E | [`READ`](#0x5f-0x0e-read) | `-` | 3 | 1 | read `$1` words from channel `$2` into aggregate `$3`, beginning at visible index 1. |
+| 0x5F 0x0F | [`WRITE`](#0x5f-0x0f-write) | `-` | 3 | 1 | write `$1` bytes to channel `$2`; each byte is the low byte of one word from aggregate `$3` beginning at visible index 1, with the high byte of each word discarded. |
+| 0x5F 0x10 | [`READREC`](#0x5f-0x10-readrec) | `-` | 4 | 1 | read `$1` records from channel `$3` starting at record `$2` into the byte payload of aggregate `$4`. |
+| 0x5F 0x11 | [`WRITEREC`](#0x5f-0x11-writerec) | `-` | 4 | 1 | write `$1` records from the byte payload of aggregate `$4` to channel `$3` starting at record `$2`. |
+| 0x5F 0x12 | [`DISP`](#0x5f-0x12-disp) | `B` | 0 | 0 | display-control suboperation selected by the inline byte (see §8.2.4). |
+| 0x5F 0x13 | [`XDISP`](#0x5f-0x13-xdisp) | `B` | 1 | 1 | extended display-control suboperation selected by the inline byte (see §8.2.5). |
 | 0x5F 0x14 | [`FSIZE`](#0x5f-0x14-fsize) | `-` | 1 | 1 | file size query in block-like units. |
 | 0x5F 0x15 | [`UNLINK`](#0x5f-0x15-unlink) | `-` | 1 | 1 | delete a named file. |
 | 0x5F 0x16 | [`POPRET`](#0x5f-0x16-popret) | `-` | varies | 0 | discard the just-returned result bundle. |
-| 0x5F 0x17 | [`KBINPUT`](#0x5f-0x17-kbinput) | `-` | 0 | 1 | nonblocking keyboard poll. |
-| 0x5F 0x18 | [`FADD`](#0x5f-0x18-fadd) | `-` | 3 | 1 | floating-point addition over 8-byte real numbers. |
-| 0x5F 0x19 | [`FSUB`](#0x5f-0x19-fsub) | `-` | 3 | 1 | floating-point subtraction over the same format (`real($2) - real($1)`). |
-| 0x5F 0x1A | [`FMUL`](#0x5f-0x1a-fmul) | `-` | 3 | 1 | floating-point multiplication over the same format. |
-| 0x5F 0x1B | [`FDIV`](#0x5f-0x1b-fdiv) | `-` | 3 | 1 | floating-point division over the same format (`real($2) / real($1)`). |
-| 0x5F 0x1C | [`TPOP`](#0x5f-0x1c-tpop) | `-` | 1 | 0 | move the tuple-stack pointer upward by `$1` words. |
-| 0x5F 0x1D | [`FLOG`](#0x5f-0x1d-flog) | `-` | 2 | 1 | natural logarithm over 8-byte real numbers. |
-| 0x5F 0x1E | [`FEXP`](#0x5f-0x1e-fexp) | `-` | 2 | 1 | exponential (inverse natural logarithm) over 8-byte real numbers. |
-| 0x5F 0x1F | [`STRICMP`](#0x5f-0x1f-stricmp) | `-` | 5 | 1 | compare first string slice `($4, $2, $1)` against second string `($5, 0, $3)` case-insensitively without skipping spaces; return `+1`, `0`, or `-1` with the VM's inverted sign convention. |
-| 0x5F 0x20 | [`STRICMP1`](#0x5f-0x20-stricmp1) | `-` | 5 | 1 | perform `STRICMP`, but use first string handle `$4 - 1` instead of `$4`. |
-| 0x5F 0x21 | [`WPRINTV`](#0x5f-0x21-wprintv) | `-` | 4 | 1 | clipped window print with `$4 = D`, `$3 = S`, `$2 = N`, and `$1 = O`. |
-| 0x5F 0x22 | [`SETWIN`](#0x5f-0x22-setwin) | `-` | 1 | 1 | activate the display window described by descriptor handle `$1`. |
-| 0x5F 0x23 | [`KEYCMP`](#0x5f-0x23-keycmp) | `-` | 2 | 1 | compare structured sort keys. |
-| 0x5F 0x24 | [`MEMCMP`](#0x5f-0x24-memcmp) | `-` | 3 | 1 | compare `$1` bytes of aggregate `$2` against aggregate `$3` and push the VM comparison result. |
-| 0x5F 0x25 | [`MEMCMPO`](#0x5f-0x25-memcmpo) | `-` | 4 | 1 | compare `$2` bytes of aggregate `$3`, starting at raw byte offset `$1`, against the payload of aggregate `$4`, then push the VM comparison result. |
-| 0x5F 0x26 | [`ADVANCE`](#0x5f-0x26-advance) | `-` | 2 | 1 | vector helper deriving an offset or pointer from an indexed byte. (used to advance to the next B-tree node) |
+| 0x5F 0x17 | [`KBINPUT`](#0x5f-0x17-kbinput) | `-` | 0 | 1 | nonblocking keyboard poll; pushes **FALSE** if no input is ready (see §7.5.2). |
+| 0x5F 0x18 | [`FADD`](#0x5f-0x18-fadd) | `-` | 3 | 1 | floating-point addition: `real($2) + real($1)`; result written at `$3` (see §4.7). |
+| 0x5F 0x19 | [`FSUB`](#0x5f-0x19-fsub) | `-` | 3 | 1 | floating-point subtraction: `real($2) - real($1)`; result written at `$3` (see §4.7). |
+| 0x5F 0x1A | [`FMUL`](#0x5f-0x1a-fmul) | `-` | 3 | 1 | floating-point multiplication: `real($2) × real($1)`; result written at `$3` (see §4.7). |
+| 0x5F 0x1B | [`FDIV`](#0x5f-0x1b-fdiv) | `-` | 3 | 1 | floating-point division: `real($2) / real($1)`; result written at `$3` (see §4.7). |
+| 0x5F 0x1C | [`TPOP`](#0x5f-0x1c-tpop) | `-` | 1 | 0 | move the tuple-stack pointer upward by `$1` words, freeing that many words of tuple memory (see §4.4). |
+| 0x5F 0x1D | [`FLOG`](#0x5f-0x1d-flog) | `-` | 2 | 1 | natural logarithm: `ln(real($1))`; result written at `$2` (see §4.7). |
+| 0x5F 0x1E | [`FEXP`](#0x5f-0x1e-fexp) | `-` | 2 | 1 | natural exponential: `e^real($1)`; result written at `$2` (see §4.7). |
+| 0x5F 0x1F | [`STRICMP`](#0x5f-0x1f-stricmp) | `-` | 5 | 1 | compare string slice `($4, $2, $1)` against string `($5, 0, $3)` case-insensitively without skipping spaces; push the **signed comparison result** (see §1.5.2). |
+| 0x5F 0x20 | [`STRICMP1`](#0x5f-0x20-stricmp1) | `-` | 5 | 1 | as `STRICMP`, but use first string handle `$4 - 1` instead of `$4`. |
+| 0x5F 0x21 | [`WPRINTV`](#0x5f-0x21-wprintv) | `-` | 4 | 1 | clipped print into the window described by **window descriptor** handle `$4`; `$3` = source string handle, `$2` = character count, `$1` = source offset (see §8.4.4). |
+| 0x5F 0x22 | [`SETWIN`](#0x5f-0x22-setwin) | `-` | 1 | 1 | activate the display window described by **window descriptor** handle `$1` (see §8.4.3). |
+| 0x5F 0x23 | [`KEYCMP`](#0x5f-0x23-keycmp) | `-` | 2 | 1 | compare structured sort keys `$1` and `$2` and push the **signed comparison result** (see §1.5.2). |
+| 0x5F 0x24 | [`MEMCMP`](#0x5f-0x24-memcmp) | `-` | 3 | 1 | compare `$1` bytes of aggregate `$2` against aggregate `$3` and push the **signed comparison result** (see §1.5.2). |
+| 0x5F 0x25 | [`MEMCMPO`](#0x5f-0x25-memcmpo) | `-` | 4 | 1 | compare `$2` bytes of aggregate `$3`, starting at raw byte offset `$1`, against the payload of aggregate `$4`, and push the **signed comparison result** (see §1.5.2). |
+| 0x5F 0x26 | [`ADVANCE`](#0x5f-0x26-advance) | `-` | 2 | 1 | derive an offset from an indexed byte in aggregate `$2`; used to advance to the next B-tree node. |
 | 0x5F 0x27 | [`DECMG`](#0x5f-0x27-decmg) | `B` | 0 | 1 | decrement a module global and push the new value. |
 | 0x5F 0x28 | [`DECG`](#0x5f-0x28-decg) | `B` | 0 | 1 | decrement a program global and push the new value. |
-| 0x5F 0x29 | [`POPI`](#0x5f-0x29-popi) | `B` | varies | 0 | discard `$B` words from the stack. |
+| 0x5F 0x29 | [`POPI`](#0x5f-0x29-popi) | `B` | varies | 0 | discard `$B` words from the evaluation stack. |
 | 0x5F 0x2A | [`INCG`](#0x5f-0x2a-incg) | `B` | 0 | 1 | increment a program global and push the new value. |
 | 0x5F 0x2B | [`INCMG`](#0x5f-0x2b-incmg) | `B` | 0 | 1 | increment a module global and push the new value. |
-| 0x5F 0x2C | [`STOREMG`](#0x5f-0x2c-storemg) | `B` | 0 | 0 | store into a module global while preserving the top of stack. |
-| 0x5F 0x2D | [`STOREG`](#0x5f-0x2d-storeg) | `B` | 0 | 0 | store into a program global while preserving the top of stack. |
+| 0x5F 0x2C | [`STOREMG`](#0x5f-0x2c-storemg) | `B` | 0 | 0 | store into a module global while preserving the top of the evaluation stack. |
+| 0x5F 0x2D | [`STOREG`](#0x5f-0x2d-storeg) | `B` | 0 | 0 | store into a program global while preserving the top of the evaluation stack. |
 | 0x5F 0x2E | [`RETN`](#0x5f-0x2e-retn) | `B` | varies | varies | counted return; inline byte gives the number of returned words. |
 | 0x5F 0x2F | [`PRCHAR`](#0x5f-0x2f-prchar) | `-` | 1 | 0 | print one character without character-set translation. |
-| 0x5F 0x30 | [`UNPACK`](#0x5f-0x30-unpack) | `-` | 4 | 1 | unpack packed 5-bit text symbols with `$4 = source vector`, `$3 = destination vector`, `$2 = word count`, and `$1 = destination byte offset`. |
-| 0x5F 0x31 | [`PINM`](#0x5f-0x31-pinm) | `-` | 0 | 0 | preload and pin all code pages in current module |
-| 0x5F 0x32 | [`UNPINM`](#0x5f-0x32-unpinm) | `-` | 0 | 0 | unpin current module's code pages |
-| 0x5F 0x34 | [`FMTREAL`](#0x5f-0x34-fmtreal) | `-` | 4 | 1 | format 8-byte real number as a string. |
-| 0x5F 0x35 | [`PRSREAL`](#0x5f-0x35-prsreal) | `-` | 6 | 1 | parse a string as an 8-byte real number |
-| 0x5F 0x36 | [`LOOKUP`](#0x5f-0x36-lookup) | `-` | 1 | 1 | resolve packed descriptor key `$1` into a descriptor-vector handle. |
-| 0x5F 0x37 | [`EXTRACT`](#0x5f-0x37-extract) | `-` | 8 | 1 | packed descriptor-field walker with `$1` as the mode or subfield selector and `$2-$8` as the descriptor-walker parameters summarized in A.9.2. |
-| 0x5F 0x38 | [`RENAME`](#0x5f-0x38-rename) | `-` | 2 | 1 | rename a file from one string name to another. |
+| 0x5F 0x30 | [`UNPACK`](#0x5f-0x30-unpack) | `-` | 4 | 1 | unpack packed 5-bit text symbols; `$4` = source aggregate, `$3` = destination aggregate, `$2` = word count, `$1` = destination byte offset. |
+| 0x5F 0x31 | [`PINM`](#0x5f-0x31-pinm) | `-` | 0 | 0 | preload and pin all code blocks in the current module. |
+| 0x5F 0x32 | [`UNPINM`](#0x5f-0x32-unpinm) | `-` | 0 | 0 | unpin the current module's code blocks. |
+| 0x5F 0x34 | [`FMTREAL`](#0x5f-0x34-fmtreal) | `-` | 4 | 1 | format an 8-byte real number as a string (see §4.7). |
+| 0x5F 0x35 | [`PRSREAL`](#0x5f-0x35-prsreal) | `-` | 6 | 1 | parse a string as an 8-byte real number (see §4.7). |
+| 0x5F 0x36 | [`LOOKUP`](#0x5f-0x36-lookup) | `-` | 1 | 1 | resolve **field descriptor** `$1` into a handle (see §8.5.2). |
+| 0x5F 0x37 | [`EXTRACT`](#0x5f-0x37-extract) | `-` | 8 | 1 | walk **field descriptor** fields; `$1` is the mode or subfield selector and `$2`–`$8` are the walker parameters (see §8.5.3). |
+| 0x5F 0x38 | [`RENAME`](#0x5f-0x38-rename) | `-` | 2 | 1 | rename a file from name `$2` to name `$1`. |
+
+---
 
 ### A.9 Packed Opcode Families
 
 | Opcode | Mnemonic | Operands | Pops | Pushes | Description |
 | --- | --- | --- | ---: | ---: | --- |
-| 0x60-0x9F | [`VREAD_loc_vec`](#0x60-0x9F-VREAD-loc-vec) | `-` | 0 | 1 | compact vector-word read. Bits `0-3` select a local containing the vector handle; bits `4-5` select one of the first four visible words. |
-| 0xA0-0xBF | [`PUSH_Ln`](#0xA0-0xBF-PUSH-Ln) | `-` | 0 | 1 | compact local push for locals `0..31`. |
-| 0xC0-0xDF | [`PUT_Ln`](#0xC0-0xDF-PUT-Ln) | `-` | 1 | 0 | compact local store for locals `0..31`, consuming the top of stack. |
-| 0xE0-0xFF | [`STORE_Ln`](#0xE0-0xFF-STORE-Ln) | `-` | 0 | 0 | compact local store for locals `0..31`, preserving the top of stack. |
+| 0x60–0x9F | [`VREAD_loc_vec`](#0x60-0x9F-VREAD-loc-vec) | `-` | 0 | 1 | packed vector-word read using a local-held handle; see §5.4.1 for the bit assignment. |
+| 0xA0–0xBF | [`PUSH_Ln`](#0xA0-0xBF-PUSH-Ln) | `-` | 0 | 1 | packed local push for locals `0`–`31`. |
+| 0xC0–0xDF | [`PUT_Ln`](#0xC0-0xDF-PUT-Ln) | `-` | 1 | 0 | packed local store for locals `0`–`31`, consuming the top of the evaluation stack. |
+| 0xE0–0xFF | [`STORE_Ln`](#0xE0-0xFF-STORE-Ln) | `-` | 0 | 0 | packed local store for locals `0`–`31`, preserving the top of the evaluation stack. |
 
 ## Appendix B. Opcode Reference
 
