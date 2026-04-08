@@ -9,772 +9,1999 @@
 
 ### 1.1 Purpose
 
-This document defines the **Cornerstone virtual machine**, historically identified as the **Mu Machine** and implemented as **MME** (Mu Machine Emulator). It specifies the contract between the interpreter and the bytecode program it interprets.
+This document is the normative specification for the **Cornerstone VM**, a
+16-bit bytecode virtual machine. It defines the contract between an interpreter
+and the program it executes.
 
-This specification is intended to be useful for:
+> **Note:** The Cornerstone VM was historically known as the Mu Machine. The
+> original implementation is **MME** (`MME.EXE`), an abbreviation for Mu Machine
+> Emulator. These earlier names appear in contemporaneous materials but are not
+> used in this specification.
+
+This specification serves as a reference for:
 
 1. parsing `.MME` and `.OBJ` image files;
 2. disassembling valid Cornerstone bytecode images; and
-3. implementing an interpreter capable of accurately executing the Cornerstone database package and other existing program images.
+3. implementing an interpreter capable of accurately executing the Cornerstone
+   database package and other existing program images.
 
 ### 1.2 Scope
 
-The Cornerstone virtual machine is a 16-bit interpreted bytecode architecture. A complete executable image consists of both:
+A complete Cornerstone VM executable image consists of:
 
-1. a `.MME` file, which contains the image header, several metadata tables describing modules and their contents, and the initial RAM image; and
-2. a `.OBJ` file, which contains the modules and read-only data.
+1. a `.MME` file, containing the image header, metadata tables describing
+   modules and their contents, and the initial RAM image; and
+2. a `.OBJ` file, containing the modules and read-only data.
 
-From the standpoint of bytecode, the machine provides a stack-based execution architecture with procedures, locals, globals, vectors, tuples, and non-local control transfer, as well as several services including memory allocation, display control, keyboard polling, stream- and record-based I/O, and complex data searching and extraction.
+The machine provides a stack-based execution architecture with procedures,
+local variables, program globals, module globals, vectors, tuples, and
+non-local control transfer, as well as host services including memory
+allocation, display control, keyboard polling, stream- and record-based I/O,
+and data searching and extraction. All of the above is within the scope of
+this specification.
 
-All of the above is within the scope of this specification.
+The binary formats of Cornerstone application files — including `.DBF`
+database record files, field index files, and other file structures read or
+written by a running Cornerstone program — are outside the scope of this
+specification. Those formats are transferred as opaque byte streams by the
+interpreter's I/O opcodes; this specification defines the I/O interface, not
+the content transferred through it.
 
-Application-level data formats are outside the scope of this specification, except for those that are manipulated by the interpreter.
+### 1.3 Normative Language
 
-### 1.3 Notation
+The key words **must**, **must not**, **shall**, **shall not**, **should**,
+**should not**, **recommended**, **may**, and **optional** in this document
+are to be interpreted as described in RFC 2119.
+
+Unless explicitly marked otherwise, all statements in numbered sections are
+normative. Non-normative content appears in **Note**, **Rationale**, or
+**Provisional** callouts.
+
+Behavior that this specification does not define is **undefined**; no
+conforming program may rely on it, and an interpreter may take any action in
+response. Behavior that this specification explicitly delegates to the
+implementation is **implementation-defined**; an interpreter must behave
+consistently for any given implementation-defined choice and must document
+that choice.
+
+A **conforming program** is one whose execution does not rely on any
+behavior that this specification designates as undefined.
+
+A **conforming interpreter** is one that implements all normative requirements
+of this specification for every conforming program.
+
+### 1.4 Notation and Conventions
 
 In this specification:
 
-* Hexadecimal numbers are written in C syntax, such as `0xAB`
-* **Bold** is used for the primary definition of a term or structure
-* _Italic_ is used for emphasis
-* Offsets are specified in bytes, unless otherwise specified
-* Values are implied to be words, unless otherwise specified
+- Hexadecimal constants are written in C syntax with uppercase hex digits:
+  `0xAB`, `0x5F`. Do not use assembly-style notation (`0ABh`) or dollar-sign
+  notation (`$AB`).
+- **Bold** marks the primary definition of a term or structure.
+- *Italic* marks emphasis.
+- Offsets are in bytes unless otherwise stated.
+- Values are words unless otherwise stated.
+- This specification uses ordinal numbers when referring to elements subject
+  to multiple indexing conventions. For example, the initial word of an
+  aggregate — which may have index `0` or `1` depending on the accessor — is
+  described as the "first word".
 
-This specification uses ordinal numbers rather than numeric indexes when referring to elements which are potentially subject to multiple indexing systems. For example, the initial word of a vector, which may have index `0` or `1` depending on how it is accessed, is described here as the "first word".
+The following terms are used throughout this specification. Each is defined
+briefly here; entries that span multiple chapters are given complete normative
+definitions at their canonical location, which is noted.
 
-### 1.4 Terminology
+- A **word** is a 16-bit little-endian value. All logical addresses and all
+  VM storage values are words unless stated otherwise.
+- A **byte** is an 8-bit value.
+- **Bits** within a byte are numbered 0 (least significant) to 7 (most
+  significant).
+- A **module number** is 1-based.
+- An **index** is 1-based unless otherwise stated.
+- An **offset** is zero-based.
+- A **logical address** is a 16-bit word address in the VM's split address
+  space. See section 4.1 for the complete definition including segment
+  boundaries and the address-to-physical mapping.
+- An **aggregate** is a contiguous group of words in VM RAM accessed through
+  a **handle**. Vectors, tuples, and static arrays in the initial RAM image
+  are all aggregates. See section 4.3.
+- A **handle** is a logical address pointing to the first word of an
+  aggregate. A handle value of FALSE (see section 1.5.1) indicates the absence
+  of an aggregate and must not be dereferenced. A handle is not a channel
+  number.
+- A **vector** is an aggregate allocated from the vector heap; see section 4.3.
+- A **tuple** is an aggregate allocated from the tuple stack; see section 4.4.
+- A **string** is an aggregate whose layout is defined in section 4.6.
+- The **evaluation stack** is the per-call-frame stack of words from which
+  instructions consume their inputs and to which they write their results;
+  see section 2.1.
+- A **procedure** is a block of bytecode in a module, identified by a
+  procedure offset; see section 6.1.
+- A **procedure selector** is a 16-bit value encoding a far-call target. See
+  section 3.2.1 for the compact field layout and section 6.3 for the full
+  normative definition and resolution rules.
+- The **Cornerstone VM**, or **the VM**, is the abstract machine defined by
+  this specification.
+- An **interpreter** is any implementation of the VM described in this
+  specification.
+- The **program** is the software executing within the VM. Use *program* in
+  normative and behavioural prose.
+- **Bytecode** is the encoded form of the instruction stream and associated
+  data as it exists in the `.MME` and `.OBJ` files. Use *bytecode* when
+  discussing instructions as data rather than as executing code.
+- **RAM** is the word-addressed memory made available to the program at
+  runtime; see section 4.1.
+- A **VM-visible** value or behavior is one that a conforming program can
+  observe or depend on.
 
-For the purposes of this specification:
+### 1.5 Fundamental Values and Behavioral Conventions
 
-* **FALSE** is the value `0x8001`, *not zero*.
-* a **word** is a 16-bit little-endian value;
-* a **byte** is an 8-bit value;
-* **bits** within a byte are numbered 0 to 7, with 0 being the least significant bit;
-* a **module number** is 1-based;
-* an **index** is 1-based unless otherwise specified;
-* an **offset** is zero-based;
-* a **logical address** is a 16-bit VM-visible word address interpreted according to the split-RAM mapping defined in section 6.2;
-* a **handle** is a logical address pointing to the beginning of a vector or tuple;
-* a **vector** is a consecutive group of words in RAM;
-* a **length-prefixed vector** is a vector whose first element is the count of the words that follow;
-* a **string** is a mixed-element structure in memory whose first *word* is the count of the *bytes* that follow;
-* a **procedure** or **function** is a block of code starting at a given offset within a module in the `.OBJ` file, consisting of a header and instructions;
-* a **procedure selector** is a 16-bit far procedure reference resolved through the procedure tables defined in the `.MME` image, identifying a procedure exported from a module;
-* the **VM** or **virtual machine** is the abstract computer described in this specification;
-* an **interpreter** is any implementation of the virtual machine described in this specification;
-* the **bytecode** or **program** is the software running within the VM (such as the Cornerstone database package), described in the `.MME` and `.OBJ` files;
-* the **RAM** is the word-addressed memory made available to the bytecode, including but not limited to the memory initialized from the initial RAM image;
-* a **VM-visible** value or behavior is one that can be detected by a conforming bytecode program running within the VM;
+#### 1.5.1 The FALSE Sentinel
 
-### 1.4 Normative Language
+**FALSE** is the value `0x8001`. FALSE is not zero and is not related to the
+word value `0x0000`.
 
-The key words **must**, **must not**, **shall**, **shall not**, **should**, **should not**, **recommended**, **may**, and **optional** in this document are to be interpreted as described in RFC 2119.
+The VM uses FALSE as the canonical absent-or-failed result. Specifically:
 
-Unless explicitly marked otherwise, statements in this document are normative.
+1. A local variable that is not explicitly initialized by the procedure header
+   has the value FALSE at procedure entry (see section 6.4).
+2. Opcodes that perform a search or lookup and find no match push FALSE onto
+   the evaluation stack (see the applicable entries in Appendix B).
+3. `KBINPUT` returns FALSE when no key is pending (see section 8.3).
+4. A handle value of FALSE indicates the absence of an aggregate. Opcodes that
+   accept an optional aggregate may receive FALSE to indicate "none"; the
+   behavior of each such opcode is defined in Appendix B.
 
-Behavior that is not defined by this specification is implementation-dependent. A **conforming** program is one that behaves as required by this specification, and does not rely on any undefined behavior from the interpreter.
+Passing FALSE as a handle to any opcode that dereferences it produces
+undefined behavior.
 
-### 1.5 Reference Implementations
+#### 1.5.2 The Signed Comparison Result Convention
 
-In addition to the canonical implementation, MME, there exist two reference implementations, Linchpin (C#) and LinchpinST (C), available as of April 2026 at <https://github.com/taradinoc/linchpin>, which should be consulted if required information is found to be missing from this specification.
+Several opcodes return a **signed comparison result**: the word value `+1` if
+the first operand is strictly less than the second operand, `0` if the
+operands are equal, and `−1` if the first operand is strictly greater than the
+second operand.
 
-### 1.6 Completeness/Correctness
+> **Note:** This convention is the **opposite** of the C `memcmp`/`strcmp`
+> sign convention, in which a positive result indicates that the first argument
+> ranks higher than the second.
 
-This specification is the result of a third-party reverse-engineering effort undertaken more than 40 years after Cornerstone's release. At the time of this writing, that effort is still ongoing, and existing Cornerstone program images may expect interpreter behavior that remains undiscovered or undocumented. Future versions of this specification may define behavior that is undefined in this version.
+The opcodes that return a signed comparison result are identified in Appendix B
+and include `MEMCMP`, `MEMCMPO`, `KEYCMP`, `STRICMP`, and `STRICMP1`. Those
+Appendix B entries cross-reference this section rather than restating the
+convention.
 
-Except where noted, if the behavior of MME contradicts this specification, its behavior should be considered correct, and the specification incorrect.
+### 1.6 Reference Implementations and Completeness
+
+**MME** (`MME.EXE`) is the original DOS implementation of the Cornerstone VM
+and is the authoritative reference for VM behavior.
+
+Two additional reference implementations exist: **Linchpin** (C#) and
+**LinchpinST** (C). Their source is publicly available and may be consulted as
+a supplement when this specification is found to be incomplete. See the
+Linchpin project repository for the current source location.
+
+> **Note:** Where this specification is found to describe behavior that
+> contradicts MME's observed behavior, the specification is likely in error.
+> Such discrepancies should be reported as bugs against the specification.
+
+This specification may be incomplete. Existing program images may depend on
+interpreter behavior that has not yet been documented here. Future versions of
+this specification may define behavior that this version leaves undefined.
 
 ## 2. Architectural Overview
 
-### 2.1 Execution Model
+This chapter provides a conceptual map of the Cornerstone VM for a reader
+encountering it for the first time. The content here is informative; normative
+requirements are stated in the chapters that follow. Each subsection identifies
+where those normative details live.
 
-The Cornerstone virtual machine is a stack machine. Instructions consume operands from an evaluation stack of words and produce results either on that stack or into one of the VM storage spaces.
+### 2.1 Machine Model
 
-The principal storage spaces are:
+The Cornerstone VM is a stack machine. Instructions consume operands from an
+**evaluation stack** of words and deposit results either onto that stack or
+into one of five storage spaces:
 
-1. locals in the current procedure frame;
-2. program globals;
-3. module globals;
-4. managed vectors and tuples; and
-5. interpreter-owned system slots exposed through the high out-of-range module-global band.
+1. **local variables** in the active call frame;
+2. **program globals**, shared across all modules;
+3. **module globals**, private to the module that accesses them;
+4. **aggregates** (vectors, tuples, and static arrays; see sections 4.3–4.4); and
+5. **system variables**, accessed as module-global indices `0xC0`–`0xFF`
+   (see section 7).
 
-### 2.2 Module Organization
+All VM values are 16-bit words.
 
-Code is divided into **modules**. The modules are stored in the `.OBJ` file; the last module may optionally be followed by read-only data. Module boundaries are defined by the module table in the `.MME` file.
+The tuple stack (section 4.4) is a separate runtime structure used to allocate
+tuples; it is distinct from the evaluation stack.
 
-In order for one module to call procedures in another, a far call instruction must be used with the called procedure's selector, and the called procedure's code offset must be listed in the module's **export table** in the `.MME` file. The procedures in the export table may be in any order, regardless of the order of the procedures in the `.OBJ` file.
+The VM interacts with the host environment for display output, keyboard input,
+and file I/O. Host services are described in section 8.
 
-Procedures within the same module may call each other by using a near call instruction, which takes the called procedure's code offset within the module.
+### 2.2 Module System
 
-The number of modules is limited to 24. Each module may have any number of private (non-exported) procedures, but no more than 255 exported procedures, and no more than 64 KB of code.
+A program is partitioned into **modules**. All modules reside in the `.OBJ`
+file; module start offsets are recorded in the module table in the `.MME` file.
+Each module has its own set of module globals and may export procedures to
+other modules.
 
-### 2.3 Code Blocks
+Procedures within the same module call each other using **near calls**, which
+identify the target procedure by its **procedure offset**—a module-relative
+byte address.
 
-Execution is organized into 256-byte code blocks.
+To call a procedure in a different module, the caller uses a **far call**, which
+identifies the target by a **procedure selector**. A procedure selector is a
+16-bit value that encodes the target module and the target procedure's position
+in that module's export table (see section 3.2.1 for the binary encoding and
+section 6.3 for the normative call-form rules). For a far call to succeed, the
+target procedure must appear in that module's **export table** in the `.MME`
+file.
 
-Every code block must terminate with a `NEXTB` instruction. Each block shall be padded as necessary so that the following block begins on a 256-byte boundary.
+> **Note:** The normative limits on the number of modules, the number of
+> procedures exported per module, and the maximum code size per module are
+> defined in section 3.1.
 
-A procedure may span any number of 256-byte boundaries, provided that each individual instruction and each procedure header lies entirely within a single block. Individual instructions and procedure headers shall not cross a 256-byte boundary.
+### 2.3 Fetch-Dispatch Loop
 
-### 2.4 Fetch and Dispatch
+The interpreter fetches one byte at a time from the active instruction stream.
 
-The interpreter shall fetch and dispatch one primary opcode byte at a time from the active instruction stream.
+Bytes `0x00`–`0x5E` are **base opcodes** and are dispatched immediately. Byte
+`0x5F` is the **extended-opcode** prefix; the interpreter fetches a second byte
+to form the secondary opcode. The defined secondary-opcode range is
+`0x00`–`0x38`. Bytes `0x60`–`0xFF` encode the packed opcode families, in which
+the complete instruction—including its operand—is encoded in a single byte.
+Full encoding rules for all opcode forms are defined in section 5.
 
-Extended opcodes use the primary byte `0x5F`, followed by a one-byte secondary opcode. The defined extended-opcode range is `0x00..0x38`.
+Execution within a module is organized into 256-byte **code blocks** terminated
+by `NEXTB`; see section 5.2 for the block discipline.
 
-## 3. Program Image Format
+## 3. Image File Format
 
-### 3.1 The `.MME` Container
+### 3.1 Overview
 
-The `.MME` file is the primary metadata container for a Cornerstone image. It contains the header, module table, global variable tables, module export tables, and initial RAM image.
+A Cornerstone VM program is distributed as two binary files: an `.MME` file
+and an `.OBJ` file. The `.MME` file contains the image header, module table,
+program global tables, module export tables, and the **initial RAM image** that
+is loaded into VM RAM at startup. The `.OBJ` file contains the executable
+**bytecode** of each **module** and an optional **read-only data region**.
 
-#### 3.1.1 Header
+The following capacity limits apply to all conforming image files:
 
-The `.MME` file has a 48-word (96-byte) **image header**, most of which is reserved. The following fields are defined, all of which are little-endian words:
+| Quantity | Limit |
+|----------|-------|
+| Modules | ≤ 24 |
+| Program globals | ≤ 256 (indices 0–255) |
+| Module globals per module | ≤ 192 (indices `0x00`–`0xBF`) |
+| Exported procedures per module | ≤ 255 |
+| Initial RAM image size | ≤ 32,768 words (64 KiB) |
 
-| Byte Offset | Meaning |
+The authoritative statement of each limit appears in the subsection that
+defines the relevant structure. The table above is provided as a convenience
+summary only.
+
+### 3.2 The `.MME` File
+
+The `.MME` file is the primary metadata container for a Cornerstone program.
+Its layout, from lowest to highest file offset, is: image header, module table,
+program global count table, program global initial-value table, module export
+tables (at an offset given by the header), padding bytes, and initial RAM
+image.
+
+#### 3.2.1 Image Header
+
+The `.MME` file begins with a 48-word (96-byte) **image header**. All header
+fields are little-endian words. The following fields are defined:
+
+| Byte offset | Meaning |
 |:-----------:|---------|
-| `0x0E`        | The total size in bytes of all modules in the `.OBJ` file, divided by 512 and rounded down |
-| `0x10`        | The procedure selector of the entry point |
-| `0x16`        | The size in words of the initial RAM image |
-| `0x1A`        | The offset in the `.MME` file of the module table, divided by 256 |
-| `0x1E`        | The length of the module table, in words |
+| `0x0E` | Total size in bytes of all modules in the `.OBJ` file, divided by 512 and rounded down |
+| `0x10` | **Procedure selector** of the program entry point (see Note below) |
+| `0x16` | Size in words of the initial RAM image (see section 3.2.5) |
+| `0x1A` | Offset in the `.MME` file of the module export tables, divided by 256 (see section 3.2.4) |
+| `0x1E` | Length of the module table in words (see section 3.2.2) |
 
-The initial portion of the header at byte offsets `0x00..0x0C` is considered the **image preamble**. Its semantics are not fully defined by this specification. An image emitter targeting the Cornerstone VM should emit the following preamble bytes: `0x65, 0x00, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x16, 0x00, 0xAB, 0x00`. The remaining undefined bytes in the header should be filled with zeros.
+All other bytes in the image header are reserved. Image emitters should fill
+reserved header bytes with zero.
 
-#### 3.1.2 Module Table
+> **Note:** A **procedure selector** is a 16-bit value whose high byte is the
+> 1-based module number and whose low byte is the zero-based index into that
+> module's export table. The entry-point field at `0x10` gives the procedure
+> that the interpreter shall call when the program starts. The full normative
+> definition of procedure selector encoding and resolution is in section 6.3.
 
-The header is followed by the **module table**, which defines the number and location of the code modules:
+The initial portion of the header at byte offsets `0x00`–`0x0C` is the
+**image preamble**. Its internal semantics are not defined by this specification.
 
-| Byte Offset | Meaning |
-|:-----------:|---------|
-| `0x60`        | The number of modules |
-| `0x62`        | The offset of module 1 in the `.OBJ` file, divided by 256 |
-| ...         | ... |
-| `0x60 + 2N`   | The offset of module N in the `.OBJ` file, divided by 256 |
+> **Note:** An image emitter should produce the following preamble bytes:
+> `0x65, 0x00, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x16, 0x00,`
+> `0xAB, 0x00`. This sequence matches the preamble used by programs known to
+> run correctly under MME; the interpreter's behavior for other preamble
+> values is not defined by this specification.
+
+#### 3.2.2 Module Table
+
+The image header is followed immediately at byte offset `0x60` by the **module
+table**, which lists the location of each module in the `.OBJ` file. The module
+table contains one entry for each module in order, preceded by a count word:
+
+| Table offset | Meaning |
+|:------------:|---------|
+| `+0` | Number of modules |
+| `+2` | Offset of module 1 in the `.OBJ` file, divided by 256 |
+| … | … |
+| `+2N` | Offset of module N in the `.OBJ` file, divided by 256 |
 
 The number of modules must not exceed 24.
 
-#### 3.1.3 Global Variable Tables
+The length of the module table in words is given by the image header field at
+`0x1E`. A parser may use this field to determine where the module table ends
+and the program global count table begins.
 
-The module table is followed by the **global variable size table**, which defines the number of **global variables** and **module global variables** available to the bytecode:
+> **Note:** Module numbers in the `.MME` metadata structures are 1-based.
+> Module 1 is the first entry in the module table.
 
-| Byte Offset | Meaning |
-|:-----------:|---------|
-| `+0` | The number of global variables |
-| `+2` | The number of module-global variables for module 1 |
-| ...  | ... |
-| `+2N` | The number of module-global variables for module N |
+#### 3.2.3 Program Global Tables
 
-The number of global variables must not exceed 255.
+The module table is followed by the **program global count table**, which
+records the number of program globals and the number of module globals for each
+module:
 
-The global variable size table is followed by the **initial global variable table**, which contains the initial values of the global variables, in the same order as the table above:
+| Table offset | Meaning |
+|:------------:|---------|
+| `+0` | Number of **program globals** |
+| `+2` | Number of **module globals** for module 1 |
+| … | … |
+| `+2N` | Number of module globals for module N |
 
-| Byte Offset | Meaning |
-|:-----------:|---------|
-| `+0` | The initial values of the global variables, in order |
-|      | The initial values of the module-global variables for module 1, in order |
-|      | ...  |
-|      | The initial values of the module-global variables for module N, in order |
+The number of program globals must not exceed 256. Program globals are indexed
+from 0 through 255.
 
-#### 3.1.4 Module Export Tables
+The number of module globals per module must not exceed 192. Module globals for
+each module are indexed from `0x00` through `0xBF`. Indices `0xC0`–`0xFF` are
+reserved for system variables and must not be declared as module globals.
 
-The global variable tables are followed, at the offset indicated by the image header word at `0x1A`, by the **module export tables**. This table is repeated for each module in the program, in order:
+The program global count table is followed by the **program global
+initial-value table**, which supplies the startup value of every program global
+and module global, in the same order as the count table:
 
-| Byte Offset | Meaning |
-|:-----------:|---------|
-| `+0` | The number of procedures exported by the module |
-| `2`  | The offset within the module of exported procedure 1 |
-| ...  | ... |
-| `2N` | The offset within the module of exported procedure N |
+| Table offset | Meaning |
+|:------------:|---------|
+| `+0` | Initial values of program globals 0–(N−1), one word each, in order |
+| | Initial values of module globals for module 1, one word each, in order |
+| … | … |
+| | Initial values of module globals for module M, one word each, in order |
 
-The number of procedures exported by each module must not exceed 256.
+#### 3.2.4 Module Export Tables
 
-The last module export table is always followed by at least one padding byte.
+The module export tables begin at the file offset (multiplied by 256) given by
+the image header field at `0x1A`. One export table is present for each module,
+in ascending module-number order. Each export table has the following layout:
 
-### 3.2 Initial RAM Image
+| Table offset | Meaning |
+|:------------:|---------|
+| `+0` | Number of **procedure offsets** exported by the module |
+| `+2` | **Procedure offset** of exported procedure 1 within the module |
+| … | … |
+| `+2N` | Procedure offset of exported procedure N within the module |
 
-The **initial RAM image** begins at the next 256-byte boundary after the padding byte following the last module export table. There must be at least one padding byte in between; if the module export table ends at a 256-byte boundary, it must be followed by 256 padding bytes.
+The number of exported procedures per module must not exceed 255. Exports are
+indexed from 1 in this table; a procedure selector's low byte refers to a
+zero-based index into this list, so the export at table position 1 corresponds
+to selector low byte `0x00`.
 
-The size of the initial RAM image in words is given by the image header word at `0x16`. The initial RAM image must not exceed 32,768 words (64 KB).
+The last module export table must be followed by at least one padding byte
+before the initial RAM image.
 
-The size of the initial RAM image should be kept to a minimum because of the split RAM model described in section 6.2 of this specification. If the size of the initial RAM exceeds the amount of memory allocated to the low RAM segment _at runtime_, the excess will be placed in the high segment, invalidating the compiled addresses of any structures located there.
+#### 3.2.5 Initial RAM Image
 
-### 3.3 `.OBJ` Module Layout
+The **initial RAM image** begins at the first 256-byte boundary in the `.MME`
+file that follows the padding byte(s) after the last module export table. If
+the last export table ends exactly on a 256-byte boundary, 256 additional
+padding bytes must precede the initial RAM image.
 
-The `.OBJ` file contains all of the modules of the program. Each module must start on a 256-byte boundary. Their offsets are given in the module table in the `.MME` file.
+The size of the initial RAM image in words is given by the image header field
+at `0x16`. The initial RAM image must not exceed 32,768 words (64 KiB).
 
-The modules may be followed by read-only data, which will be made available to the program at runtime through the channel indicated by the low bits of system variable `0xDA`.
+> **Note:** The initial RAM image should be kept as small as practical. The
+> split address-space model (see section 4.1) means that if the initial RAM
+> image is larger than the memory allocated to the low RAM segment at runtime,
+> the excess is placed in the high RAM segment, which invalidates the compiled
+> word addresses of any data structures located in the overflow region.
 
-## 4. Procedures, Frames, and Control Transfer
+### 3.3 The `.OBJ` File
 
-### 4.1 Procedure Header Format
+The `.OBJ` file contains the executable bytecode of all modules. Each module
+must begin at a 256-byte boundary within the `.OBJ` file. The starting offset
+of each module is given by the corresponding entry in the module table
+(section 3.2.2), multiplied by 256.
 
-Every procedure begins with a **procedure header**. The first header byte is interpreted as follows:
+> **Note:** This 256-byte module boundary is a file-level placement
+> constraint. It is distinct from the instruction-level code block alignment
+> rule, which requires each 256-byte code block within a module to be
+> terminated by a `NEXTB` instruction. See section 5.2 for the code block
+> structure rules.
 
-* bits `0-6`: local variable count (0-63);
-* bit `7`: flag indicating whether initial values are present.
+The modules may be followed by a **read-only data region**. The interpreter
+shall make the read-only data region available to the program as a readable
+pseudo-file; the channel through which it is accessible is determined by
+system variable `0xDA` (see section 7).
 
-If bit 7 is set, the first header byte is followed by one or more initializer records. Each initializer record starts with an introduction byte:
+## 4. Memory Model
 
-* bits `0-5`: local variable index (0-63);
-* bit `6`: flag indicating the size of the initial value;
-* bit `7`: flag indicating the final initializer record.
+This chapter defines the VM's runtime address space, the two dynamic memory
+allocators, the access conventions for aggregate data structures, and the
+in-RAM representations for strings and floating-point values. The concepts
+defined here are prerequisites for section 5 (Instruction Stream and Encoding)
+and section 6 (Procedures and Execution).
 
-The introduction is followed by one or two bytes giving the initial value of the local variable. If bit 6 of the introduction is set, the initial value is a byte that must be sign-extended; if bit 6 is clear, the initial value is a word.
+### 4.1 Logical Address Space
 
-Each initializer record names one local variable and supplies one initializer value. The list ends with the record that has bit 7 set.
+The VM exposes a 16-bit logical **word-address space** divided into two 64-KiB
+segments: the **low RAM segment**, covering logical addresses `0x0000–0x7FFF`,
+and the **high RAM segment**, covering logical addresses `0x8000–0xFFFF`. A
+**logical address** is a 16-bit value interpreted as a word address within this
+space.
 
-The combined size of all the initializer records must not exceed 255 bytes.
+A logical address is decoded as follows:
 
-### 4.2 Procedure Boundaries
+1. Bit 15 selects the segment: `0` selects the low RAM segment; `1` selects the
+   high RAM segment.
+2. Bits 14–0 identify the word slot within the selected segment. The word at that
+   slot resides at byte offset `2 × (address & 0x7FFF)` within the segment's
+   physical storage.
+3. Byte access uses the same segment-selection rule and then applies a byte
+   displacement within the word-addressed space.
 
-A procedure may start at any offset within a module, provided that the procedure header does not cross a 256-byte boundary. Padding bytes may be present between procedures.
+The notional capacity of the address space is 128 KiB. At runtime, the physical
+memory available to the VM may be less than 128 KiB. In that case, each segment
+is backed by an equal share of the available physical memory, beginning at its
+respective base address. Logical addresses that exceed the physical extent of
+their segment form a gap; the result of reading or writing a logical address in
+this gap is undefined.
 
-The length of a procedure is not specified, but a procedure may be presumed to end before the next higher offset listed in the module's export table.
+> **Note:** The maximum size of the initial RAM image is constrained by the
+> low-segment capacity; see section 3.2.5. An initial RAM image that exceeds
+> available low-segment physical memory will overflow into the high segment,
+> invalidating any compiled logical addresses in the overflow region.
 
-### 4.3 Call Forms
+### 4.2 Memory Regions at Runtime
+
+At startup, the VM address space is organized into four regions.
+
+The **initial RAM image** occupies the low RAM segment beginning at logical
+address `0x0000`. Its size in words is given by the image header field at byte
+offset `0x16` (see section 3.2.1). The initial RAM image is populated from the
+`.MME` file before execution begins; it holds the initial values of program
+globals and any statically allocated aggregates.
+
+The **low vector-heap space** is the portion of the low RAM segment at addresses
+above the initial RAM image. It is managed by the vector allocator.
+
+The **high vector-heap space** is the lower portion of the high RAM segment,
+beginning at logical address `0x8000`. It is also managed by the vector
+allocator.
+
+The **tuple stack** occupies 512 words at the high end of the high RAM segment,
+at logical addresses `0xFE00–0xFFFF`. The tuple stack grows downward from its
+upper bound toward lower addresses as tuples are allocated.
+
+> **Note:** The low vector-heap space and the high vector-heap space are
+> managed independently. There is no guarantee that they are physically
+> contiguous; see section 4.1 regarding the possible address gap between
+> segments.
+
+The interpreter maintains bookkeeping for the vector allocator and the
+tuple-stack pointer. This bookkeeping is implementation-defined. The
+interpreter may store it in VM-visible memory within either vector-heap space
+or within any freed or unallocated region of those areas, at addresses above
+the end of the initial RAM image. The program must not read or rely on the
+values stored in any location used for interpreter bookkeeping.
+
+### 4.3 Vector Allocator
+
+The **vector heap** consists of the low vector-heap space and the high
+vector-heap space described in section 4.2. The two spaces are managed
+independently; a single vector allocation is served entirely from one segment
+and shall not straddle the boundary between segments.
+
+All allocations are in whole words.
+
+`VALLOC` allocates a vector of `$1` total words from the vector heap and pushes
+the handle of its first word.
+
+`VALLOCI` allocates a vector of `$1` total words, fills it with initializer
+values popped from the evaluation stack in original push order (the first value
+pushed is stored at the first word of the vector), and pushes the handle.
+
+`VFREE` returns a previously allocated vector to the allocator. It requires the
+handle of the vector (`$2`) and the total word count used when it was allocated
+(`$1`). The program must supply the same word count to `VFREE` that it
+originally passed to `VALLOC` or `VALLOCI`; the interpreter may validate this
+constraint.
+
+The precise implementation of the allocator is not specified. The interpreter
+may use VM-visible memory within the vector-heap spaces or within freed or
+unallocated memory for allocator state.
+
+### 4.4 Tuple Stack
+
+The **tuple stack** is the 512-word region at logical addresses `0xFE00–0xFFFF`
+in the high RAM segment (see section 4.2). Its size is 1/64 of the 32,768-word
+high RAM segment. The interpreter maintains an implementation-internal
+**tuple-stack pointer** identifying the current top of the stack. The tuple
+stack grows downward: allocating a tuple advances the pointer toward lower
+addresses; freeing tuple memory advances it toward higher addresses.
+
+All tuple allocations are in whole words.
+
+`TALLOC` allocates a tuple of `$1` total words, advances the tuple-stack
+pointer downward by `$1` words, and pushes the handle of the first word of the
+newly allocated tuple.
+
+`TALLOCI` allocates a tuple of `$1` total words, fills it with initializer
+values popped from the evaluation stack in original push order, and pushes the
+handle.
+
+Tuple memory is reclaimed in two ways:
+
+- **Explicit reclamation**: `TPOP` advances the tuple-stack pointer upward by
+  `$1` words. The program must supply the exact word count of the tuple being
+  freed. `TPOP` does not consume a handle; it simply moves the pointer.
+- **Implicit reclamation**: `LONGJMP` and `LONGJMPR` restore the tuple-stack
+  pointer to the depth captured by the corresponding `SETJMP`, implicitly
+  freeing all tuples allocated since that save point. For full semantics, see
+  section 6 (Procedures and Execution).
+
+The current depth of the tuple stack is part of the activation record saved by
+`SETJMP` and restored by `LONGJMP` and `LONGJMPR`; see section 6.
+
+> **Note:** The tuple-stack size is 512 words. Programs that exhaust this space
+> produce undefined behavior.
+
+### 4.5 Aggregate Handles and Visible Layout
+
+An **aggregate** is a contiguous range of words in VM RAM accessed through a
+**handle**. Aggregates may be any of three kinds:
+
+- A static array with a fixed logical address inside the initial RAM image.
+- A **vector**, allocated dynamically from the vector heap (see section 4.3).
+- A **tuple**, allocated dynamically from the tuple stack (see section 4.4).
+
+All three kinds are accessed through the same opcode families and obey the same
+handle and indexing conventions described in this section.
+
+#### 4.5.1 Length Words
+
+The first word of an aggregate, at physical word offset 0, may serve as a
+**length word**. When used as a length word, it holds a count of the accessible
+elements following it. The VM does not enforce the presence or absence of a
+length word; whether a given aggregate carries one is a convention applied by
+the program and by specific opcodes.
+
+#### 4.5.2 Access Conventions
+
+Opcodes that access aggregates use one of three indexing conventions. Each
+opcode's entry in Appendix B identifies which convention it applies.
+
+**Convention A — one-based word access, no length-word skip.** The index counts
+words from the start of the aggregate, beginning at 1. Index 1 refers to the
+word at physical word offset 0 (the first word, which may be a length word).
+Index 2 refers to the word at offset 1, and so on. There is no implicit skip.
+
+**Convention B — one-based access with length-word prefix.** The aggregate is
+expected to carry a length word at physical word offset 0. Indexing begins at 1
+and counts from the word immediately following the length word: index 1 refers
+to the word at physical word offset 1. For byte access under Convention B, the
+byte stream begins at the first byte of the word at physical offset 1; byte
+position 1 is the first byte of that word, byte position 2 is its second byte,
+and so on.
+
+**Convention C — zero-based physical-offset access.** Offset 0 refers to the
+first word of the aggregate (at physical word offset 0). For word access, each
+increment of the offset advances by one word. For byte access, each increment
+advances by one byte.
+
+> **Note:** Convention B corresponds to the **visible index** convention:
+> visible index 1 refers to the word at physical offset 1, immediately
+> following the length word. Convention C is used by the inline-operand opcode
+> variants (the opcodes whose mnemonics end with an underscore). Appendix B
+> entries for each opcode state which convention the opcode uses.
+
+### 4.6 Strings
+
+A **string** is an aggregate in VM RAM with the following layout:
+
+1. First word (physical word offset 0): the count of the string's content bytes.
+2. Bytes beginning at the first byte of physical word offset 1: the string
+   content, in order.
+
+Strings are the standard representation for text passed to display, comparison,
+and string-manipulation opcodes. The handle of a string's first word is referred
+to as a **string handle**.
+
+String opcodes that use Convention B (section 4.5.2) treat string content as a
+byte stream beginning immediately after the length word; the length-word value
+gives the number of valid bytes.
+
+### 4.7 Floating-Point Representation
+
+Floating-point values are encoded as 64-bit IEEE 754 double-precision numbers
+in **big-endian byte order**. This byte order applies regardless of the byte
+order used for integer words elsewhere in the architecture.
+
+Floating-point values are stored in VM RAM. Operands to floating-point opcodes
+are the handles of the aggregates holding those values; the program is
+responsible for allocating the required memory before invoking a floating-point
+opcode. The program is likewise responsible for allocating destination memory
+before invoking any floating-point opcode that writes a result.
+
+The notation `real($n)` used in Appendix B opcode entries denotes the
+floating-point value stored in VM RAM at handle `$n`, interpreted as defined by
+this section.
+
+> **Note:** On little-endian host systems, the interpreter must reverse the byte
+> order of floating-point values when reading them from VM RAM and when writing
+> results back to VM RAM. This byte-reversal applies to the full 8-byte double;
+> it does not apply to integer words.
+
+## 5. Instruction Encoding
+
+The instruction stream of the Cornerstone VM is encoded in one of three forms:
+base opcodes (`0x00–0x5E`), extended opcodes (`0x5F xx`), and packed one-byte
+families (`0x60–0xFF`). All instruction bytes are organized into contiguous
+256-byte code blocks. Sections 5.2 through 5.4 define the block model, all
+inline operand encoding rules, and the packed family bit-field layouts.
+
+### 5.1 Opcode Space
+
+The one-byte opcode space is partitioned into four regions:
+
+| Range | Form |
+|-------|------|
+| `0x00–0x5E` | Base opcodes |
+| `0x5F` | Extended-opcode prefix |
+| `0x60–0x9F` | Packed `VREAD_loc_vec` family |
+| `0xA0–0xBF` | Packed `PUSH_Ln` family |
+| `0xC0–0xDF` | Packed `PUT_Ln` family |
+| `0xE0–0xFF` | Packed `STORE_Ln` family |
+
+This partition is sufficient to determine instruction form, mnemonic family,
+and operand length from the first byte alone.
+
+A **base opcode** is a single byte in the range `0x00–0x5E`. The interpreter
+fetches and dispatches it directly without a prefix byte. The byte `0x5F` is
+reserved as the extended-opcode prefix and is not itself a base opcode.
+
+An **extended opcode** consists of the prefix byte `0x5F` followed by a
+one-byte secondary opcode byte. The defined secondary range is `0x00–0x38`.
+
+The range `0x60–0xFF` is occupied by four **packed opcode families**. In a
+packed instruction, the operand is encoded within the single opcode byte
+itself; no inline operand bytes follow. The four families are defined in
+section 5.4.
+
+### 5.2 Code Block Structure
+
+The instruction stream is divided into 256-byte aligned units called **code
+blocks**. Every code block must be terminated by a `NEXTB` instruction. The
+bytes between `NEXTB` and the end of the 256-byte block are padding; the block
+shall contain sufficient padding bytes so that the following code block begins
+on a 256-byte boundary.
+
+A procedure may span any number of code-block boundaries. No instruction and
+no procedure header shall straddle a code-block boundary; each must lie
+entirely within a single code block.
+
+> **Note:** The procedure header structure, including variable-length
+> initializer records, is defined in section 6.1. The boundary constraint
+> applies to the full procedure header, including any initializer records
+> that follow the first byte.
+
+The `NEXTB` instruction has no inline operand bytes. Upon executing `NEXTB`,
+the interpreter shall advance the program counter to the start of the following
+code block. Padding bytes between `NEXTB` and that boundary shall not be
+decoded as instructions.
+
+### 5.3 Inline Operand Encoding
+
+Base opcodes and extended opcodes may be followed by zero or more inline
+operand bytes. For base opcodes, inline bytes immediately follow the opcode
+byte. For extended opcodes, inline bytes follow the secondary opcode byte. The
+number and kind of inline bytes depend on the opcode; packed opcodes
+(`0x60–0xFF`) carry no inline bytes.
+
+#### 5.3.1 General Rules
+
+All inline words are little-endian. The number and size of inline operands for
+each opcode are determined by the operand-class tables in sections 5.3.3 and
+5.3.4.
+
+#### 5.3.2 Jump Target Encoding
+
+Jump opcodes (`0x30–0x3E`) use a variable-length inline operand. Two forms are
+defined:
+
+1. **Short form.** If the first inline byte is nonzero, it is a signed 8-bit
+   offset. The branch target is the module-relative byte offset of the first
+   byte of the next instruction, plus this signed value.
+2. **Long form.** If the first inline byte is `0x00`, it is followed by a
+   little-endian word giving the module-relative byte offset of the branch
+   target directly. The total inline operand length in the long form is three
+   bytes.
+
+> **Note:** The long form accommodates branch targets that lie outside the
+> signed 8-bit range reachable by the short form.
+
+#### 5.3.3 Base-Opcode Operand Classes
+
+The following table defines the inline operand encoding for base opcodes.
+Base opcodes not listed in any row have no inline operands.
+
+| Inline operand | Opcodes |
+|----------------|---------|
+| One unsigned byte | `INCL`, `DECL`, `VLOADW_`, `VLOADB_`, `VPUTW_`, `VPUTB_`, `LOADG`, `LOADMG`, `PUSHB`, `PUTMG`, `INCLV`, `PUTL`, `PUSHL`, `STOREL` |
+| One little-endian word | `PUSHW`, `HALT`, `BITSVL`, `BITSV`, `BBSETVL`, `BBSETV`, `BSETVL`, `BSETV` |
+| Jump target (see section 5.3.2) | All jump opcodes `0x30–0x3E` |
+| Procedure offset — one little-endian word (see section 6.3) | `CALL0`–`CALL3` |
+| One unsigned byte (argument count) | `CALL`, `CALLF` |
+| Procedure selector — one little-endian word (see section 6.3) | `CALLF0`–`CALLF3` |
+
+> **Note:** `NEXTB` has no inline operands and does not appear in this
+> table. Its role as the mandatory code-block terminator is defined in
+> section 5.2.
+
+#### 5.3.4 Extended-Opcode Operand Classes
+
+After the `0x5F` prefix byte and the secondary opcode byte, extended opcodes
+may carry inline operands as specified below. Extended opcodes not listed in
+any row have no inline operands.
+
+| Inline operand | Opcodes |
+|----------------|---------|
+| One unsigned byte | `PUTG`, `OPEN`, `DISP`, `XDISP`, `DECMG`, `DECG`, `POPI`, `INCG`, `INCMG`, `STOREMG`, `STOREG`, `RETN` |
+| Two module-relative byte offsets | `SETJMP` |
+
+For the semantics of `SETJMP`'s two inline offsets, see section 6.8.
+
+### 5.4 Packed One-Byte Families
+
+The four packed opcode families occupy the range `0x60–0xFF`. Each packed
+instruction is a single byte; its operand is derived from bit fields within
+that byte, and no inline operand bytes follow.
+
+#### 5.4.1 `VREAD_loc_vec` (opcodes `0x60–0x9F`)
+
+An opcode in this family reads a word from an aggregate and pushes it onto the
+evaluation stack. Two fields within the opcode byte identify the source:
+
+- **Bits `0–3`:** the index (0–15) of the local variable that holds the
+  aggregate handle.
+- **Bits `4–5`:** one of the four **visible index** positions (1–4) within the
+  aggregate to read from.
+
+The visible index convention, including the length-word skipping rule, is
+defined in section 4.5.
+
+> **Note:** This subsection is the canonical definition of the `VREAD_loc_vec`
+> bit-field layout. Appendix A.9 should be read in conjunction with this
+> subsection.
+
+#### 5.4.2 `PUSH_Ln` (opcodes `0xA0–0xBF`)
+
+An opcode in this family pushes the value of a local variable onto the
+evaluation stack. Bits `0–4` of the opcode byte encode the local variable
+index (0–31).
+
+#### 5.4.3 `PUT_Ln` (opcodes `0xC0–0xDF`)
+
+Each opcode in this family selects a local variable by index. Bits `0–4` of
+the opcode byte encode the local variable index (0–31).
+
+#### 5.4.4 `STORE_Ln` (opcodes `0xE0–0xFF`)
+
+Each opcode in this family selects a local variable by index. Bits `0–4` of
+the opcode byte encode the local variable index (0–31).
+
+## 6. Procedures and Execution
+
+This chapter defines the complete procedure lifecycle: the binary format of the
+procedure header, the placement rules for procedures within a module, the two
+call families and the procedure selector format, argument passing and local
+variable initialization, the call-frame model, all return forms, non-local
+control transfer, and program termination.
+
+### 6.1 Procedure Header Format
+
+Every procedure begins with a **procedure header**. The first byte of the
+header is interpreted as follows:
+
+| Bits | Meaning |
+|------|---------|
+| `0–6` | Local variable count (0–127) |
+| `7` | Initializer-present flag |
+
+A procedure may declare at most 127 local variables.
+
+If bit 7 of the first header byte is set, one or more **initializer records**
+follow immediately. Each initializer record consists of an introduction byte
+followed by one or two value bytes, as described below.
+
+**Introduction byte:**
+
+| Bits | Meaning |
+|------|---------|
+| `0–5` | Local variable index (0–63) |
+| `6` | Value-size flag |
+| `7` | Final-record flag |
+
+If the value-size flag (bit 6) is clear, the introduction byte is followed by
+a little-endian word giving the initial value. If bit 6 is set, the
+introduction byte is followed by a single byte; the interpreter shall
+sign-extend that byte to a word before storing it in the named local variable.
+
+Only local variables with indices 0–63 may name themselves in an initializer
+record. Local variables with indices 64–127 are initialized to FALSE unless
+supplied with a value by the caller (see section 6.4).
+
+The interpreter shall process initializer records sequentially until it
+encounters one with bit 7 set; that record is the last initializer record for
+the procedure.
+
+The combined size of all initializer records for a single procedure must not
+exceed 255 bytes.
+
+> **Provisional:** The rationale for the 255-byte combined initializer-record
+> size limit has not been confirmed against MME.
+
+### 6.2 Procedure Boundaries
+
+A procedure may start at any byte offset within a module. Procedure headers
+must not straddle a code-block boundary; see section 5.2 for the code-block
+model and the full boundary constraint.
+
+The length of a procedure is not stated in the image format. A procedure may
+be assumed to end at the offset of the next lower entry in the module's export
+table, or at the end of the module if no higher-offset export exists. Padding
+bytes may be present between successive procedures.
+
+### 6.3 Call Forms and Procedure Selectors
+
+A **procedure selector** is a 16-bit value that identifies a procedure in any
+module by encoding two indices:
+
+- **high byte**: 1-based module number;
+- **low byte**: zero-based export-table index within that module.
+
+> **Note:** A compact statement of the procedure selector format also appears
+> in section 3.2.1, provided for the benefit of readers parsing the `.MME`
+> image header before reaching this chapter. Section 6.3 is the normative home
+> of this definition; section 3.2.1 cross-references it.
 
 The instruction set defines two call families:
 
-1. near calls: `CALL0` through `CALL3`, and `CALL`;
-2. far calls: `CALLF0` through `CALLF3`, and `CALLF`.
+1. **Near calls**: `CALL0`, `CALL1`, `CALL2`, `CALL3`, and `CALL`. A near call
+   remains within the current module and targets a **procedure offset** encoded
+   as an unsigned 16-bit little-endian word.
+2. **Far calls**: `CALLF0`, `CALLF1`, `CALLF2`, `CALLF3`, and `CALLF`. A far
+   call resolves a **procedure selector** and may transfer control to any module.
 
-A near call remains within the current module and uses a module-relative procedure offset.
+Within each family, two forms are available:
 
-A far call uses a **procedure selector** word with the following layout:
+- **Fixed-arity form** (`CALL0`–`CALL3`, `CALLF0`–`CALLF3`): the argument
+  count is encoded in the opcode; the procedure offset (near call) or procedure
+  selector (far call) is supplied as an inline word operand.
+- **Stack form** (`CALL`, `CALLF`): the argument count is supplied as an
+  unsigned inline byte operand; the procedure offset or selector is taken from
+  the top of the evaluation stack.
 
-* high byte: 1-based module number;
-* low byte: zero-based procedure-table index within that module.
+For stack-form calls, the caller must push arguments first, then push the
+procedure offset or selector on top of the evaluation stack. See Appendix B
+for the full operand pop sequence of `CALL` and `CALLF`.
 
-Fixed-arity and computed forms differ only in how argument count and selector are supplied:
+### 6.4 Argument Passing and Local Initialization
 
-* `CALL0..CALL3` and `CALLF0..CALLF3` encode the argument count in the opcode form itself and the offset/selector in an inline word operand;
-* `CALL` and `CALLF` take the argument count from an inline byte operand and the offset/selector from the stack.
+The caller pushes zero or more arguments onto the evaluation stack before
+executing a call instruction. After the call transfers control, the callee's
+local variables are initialized as follows:
 
-### 4.4 Argument Mapping and Local Initialization
+1. Arguments are popped from the evaluation stack and stored in local
+   variables: the last argument pushed (top of the evaluation stack) is stored
+   in local `n − 1`, and the first argument pushed (deepest argument on the
+   stack) is stored in local `0`, where `n` is the argument count.
+2. Local variables not supplied by caller arguments are initialized to the
+   values specified by the procedure header's initializer records. A local
+   variable not named in any initializer record is initialized to FALSE
+   (`0x8001`).
 
-Before executing `CALL*` or `CALLF*`, the caller may place one or more arguments on the stack.
+Initializer records in the procedure header shall not overwrite the values of
+locals already set by caller arguments.
 
-The callee's local variables shall be initialized as follows:
+The entry procedure is called with zero arguments. All of its local variables
+are initialized solely from the procedure header's initializer records, or to
+FALSE if not named in any record.
 
-1. arguments are popped from the stack and stored in local variables in reverse order, such that the first argument pushed becomes the first local variable;
-2. all remaining local variables are initialized to the values specified by the procedure header's initializer records, or FALSE (`0x8001`) if not specified.
+### 6.5 Call Frames
 
-Procedure-header initializers shall not overwrite arguments passed by the caller.
+A call instruction creates a new **call frame** for the invoked procedure and
+preserves the **return context** needed to resume the caller. The call frame
+holds the callee's local variables and persists until the procedure exits by a
+return instruction or by a non-local control transfer instruction.
 
-### 4.5 Call Frames
+The layout of call frames is implementation-defined. Call frames are not
+VM-visible.
 
-An ordinary call creates a new local frame and preserves sufficient continuation state to resume the caller in the correct module and code position. The frame persists until the procedure is exited by a return instruction or non-local control transfer instruction.
+### 6.6 Return Forms
 
-The implementation of call frames is defined by the interpreter, and not VM-visible.
+An ordinary return transfers control to the caller's return address and makes
+the returned value or values available on the caller's evaluation stack.
 
-The exact in-memory frame layout used by a particular interpreter is implementation-defined.
+The return opcodes define the following result forms:
 
-### 4.6 Return Forms
+| Opcode | Result |
+|--------|--------|
+| `RETURN` | Pops one word from the evaluation stack and returns it to the caller. |
+| `RFALSE` | Returns the value `0x8001` (FALSE) to the caller. |
+| `RZERO` | Returns the value `0` to the caller. |
+| `RET` | Returns to the caller without returning a value. |
+| `RETN` | Returns a count of words to the caller. The count is given by an unsigned inline byte operand. The words are taken from the top of the evaluation stack in order; the word at the callee's top of stack becomes the word at the caller's top of stack after the return. |
+| `POPRET` | Discards words from the evaluation stack as described below. |
 
-An ordinary return resumes execution at the caller’s continuation point, at the instruction following the call instruction, and exposes the returned value or values directly on the caller’s stack.
+`POPRET` discards from the evaluation stack the number of words returned by the
+most recently executed return instruction. The interpreter maintains a global
+word-count register that is set whenever any return instruction executes in any
+procedure. `POPRET` reads this register to determine how many words to discard.
 
-The return-family opcodes define the following result forms:
+> **Note:** The `POPRET` count register is global and is overwritten by any
+> return instruction in any procedure. If a call to another procedure occurs
+> after a return instruction and before the corresponding `POPRET`, the callee's
+> own return instruction will overwrite the register. The program must execute
+> `POPRET` before invoking any further procedures if it wishes to discard the
+> original return value.
 
-* `RETURN`: return one word from the stack;
-* `RFALSE`: return `0x8001`;
-* `RZERO`: return `0`;
-* `RET`: return no value;
-* `RETN`: return any number of words from the stack, with the count given as an inline operand;
-* `POPRET`: discard the stack words returned by the last return instruction.
+The effect of executing `POPRET` when no return instruction has yet executed in
+the current invocation of the VM is undefined.
 
-When multiple words are returned by `RETN`, their order is preserved, such that the last word pushed by the callee becomes the first word popped by the caller.
+The effect of executing `POPRET` more than once between successive return
+instructions is undefined.
 
-The number of words discarded by `POPRET` is set when a return instruction is executed, and is not VM-visible outside of its effect on `POPRET`. The effect of executing `POPRET` more than once between return instructions is undefined.
+### 6.7 Non-Local Control Transfer
 
-### 4.7 Process Exit
+The non-local control-transfer instructions are `SETJMP`, `LONGJMP`, and
+`LONGJMPR`.
 
-The `HALT` instruction is the only valid method for terminating the program. The program must not return from the entry procedure.
+`SETJMP` takes two **procedure offsets** as inline operands:
 
-`HALT 1` denotes normal termination. After terminating the program, the interpreter may clear the screen.
+- the **void return address**: the module-relative byte offset to which
+  execution resumes when `LONGJMP` is invoked with the resulting activation
+  token;
+- the **value return address**: the module-relative byte offset to which
+  execution resumes when `LONGJMPR` is invoked with the resulting activation
+  token.
 
-Any other `HALT` value denotes abnormal termination. After terminating the program, the interpreter should report the value to the user as an error code.
+`SETJMP` saves an **activation record** containing the following state:
 
-### 4.8 Non-Local Control Transfer
-
-The non-local control-transfer family consists of `SETJMP`, `LONGJMP`, and `LONGJMPR`.
-
-`SETJMP` saves a record containing:
-
-1. the depth of the tuple stack;
-2. the depth of the evaluation stack;
-3. the two code addresses in the current module, provided as inline operands;
+1. the current depth of the tuple stack (see section 4.4);
+2. the current depth of the evaluation stack;
+3. the void return address and the value return address;
 4. the current module context; and
-5. the current local variable frame (not the contents of local variables).
+5. the current call frame (the frame pointer; not the contents of the local
+   variables).
 
-The record is not VM-visible, and is only valid until the function containing `SETJMP` returns. The instruction pushes an activation token.
+The activation record is not VM-visible. `SETJMP` pushes an **activation
+token** onto the evaluation stack. The activation token is valid for use with
+`LONGJMP` or `LONGJMPR` until the procedure containing the `SETJMP`
+instruction returns.
 
 `LONGJMP` shall:
 
-1. consume the activation token;
-2. restore the tuple stack depth;
-3. restore the evaluation stack depth;
-4. restore the module context;
-5. restore the local variable frame;
-6. set the program counter to the _first_ saved code address; and
-7. resume execution without preserving a distinct explicit return value.
+1. consume the activation token from the evaluation stack;
+2. restore the tuple stack to the saved depth;
+3. restore the evaluation stack to the saved depth;
+4. restore the saved module context;
+5. restore the saved call frame; and
+6. set the program counter to the void return address and resume execution.
 
 `LONGJMPR` shall:
 
-1. consume the activation token;
-2. preserve one word from the stack as a return value;
-3. restore the tuple stack depth;
-4. restore the evaluation stack depth;
-5. restore the module context;
-6. restore the local variable frame;
-7. set the program counter to the _second_ saved code address; and
-8. push the preserved return value before resuming execution.
+1. consume the activation token from the evaluation stack;
+2. preserve the word at the top of the evaluation stack as a return value;
+3. restore the tuple stack to the saved depth;
+4. restore the evaluation stack to the saved depth;
+5. restore the saved module context;
+6. restore the saved call frame;
+7. set the program counter to the value return address; and
+8. push the preserved return value onto the evaluation stack before resuming
+   execution.
 
-## 5. Instruction Stream and Encoding
+### 6.8 Process Termination
 
-### 5.1 Opcode Organization
+`HALT` is the only valid method for terminating the program. The program must
+not return from the entry procedure; doing so produces undefined behavior.
 
-The bytecode space is partitioned as follows:
+`HALT 1` denotes normal termination. After terminating the program, the
+interpreter may clear the screen.
 
-* `0x00-0x5E`: base opcodes;
-* `0x5F xx`: extended opcode prefix and secondary opcode byte;
-* `0x60-0x9F`: packed `VREAD__` family;
-* `0xA0-0xBF`: packed `PUSH_Ln` family;
-* `0xC0-0xDF`: packed `PUT_Ln` family;
-* `0xE0-0xFF`: packed `STORE_Ln` family.
+Any other `HALT` value denotes abnormal termination. After terminating the
+program, the interpreter should report the `HALT` value to the user as an
+error code.
 
-This partition is sufficient to determine instruction form, mnemonic family, length, and namespace semantics.
+## 7. Storage Spaces
 
-### 5.2 Encoding Rules
+### 7.1 Storage Class Overview
 
-The following scalar encoding rules are fixed:
+Apart from the evaluation stack, the data directly accessible to the program
+falls into five storage classes:
 
-1. inline words are little-endian;
-2. base opcodes are followed by zero or more inline operands, with the number and size depending on the opcode;
-3. extended opcodes always begin with `0x5F` followed by a one-byte secondary opcode;
-4. packed families consume no inline operand bytes.
+1. **local variables** — private to the active call frame; accessed via the
+   packed `PUSH_Ln`, `PUT_Ln`, and `STORE_Ln` families (opcodes `0xA0–0xFF`);
+   see §7.2.
+2. **program globals** — shared across all modules; accessed via `LOADG`,
+   `PUTG`, `INCG`, and `DECG`; see §7.3.
+3. **module globals** — private to the accessing module; accessed via
+   `LOADMG`, `PUTMG`, `INCMG`, `DECMG`, and `STOREMG` at indices
+   `0x00–0xBF`; see §7.4.
+4. **system variables** — interpreter-controlled slots at module-global indices
+   `0xC0–0xFF`; accessed via `LOADMG` and `PUTMG`; see §7.5.
+5. **RAM** — the word-addressed logical address space; accessed via aggregate
+   opcodes; see §4.
 
-The inline operands of jump instructions are variable size. If the first byte following the opcode is nonzero, it is interpreted as a signed code offset relative to the start of the next instruction. If the first byte following the opcode is `0x00`, that byte is followed by a word, which is interpreted as an absolute code address in the current module.
+Each storage class has its own independent numbering space. Local variable 0,
+program global 0, module global at index `0x00`, and logical address `0x0000`
+are four distinct locations.
 
-### 5.3 Base-Opcode Operand Classes
+### 7.2 Local Variables
 
-Base opcodes use the following operand classes:
+A **local variable** is a word-sized variable private to one call frame. Local
+variables do not outlive their call frame; they are created when a procedure is
+entered and destroyed when it returns or its frame is unwound by `LONGJMP` or
+`LONGJMPR`.
 
-* no inline operand: all base opcodes not otherwise listed below;
-* one unsigned byte: `INCL`, `DECL`, `VLOADW_`, `VLOADB_`, `VPUTW_`, `VPUTB_`, `LOADG`, `LOADMG`, `PUSHB`, `PUTMG`, `INCLV`, `PUTL`, `PUSHL`, `STOREL`;
-* one little-endian word: `PUSHW`, `HALT`, `BITSVL`, `BITSV`, `BBSETVL`, `BBSETV`, `BSETVL`, `BSETV`;
-* mixed jump target: all jump opcodes `0x30-0x3E`;
-* fixed near-call code address: `CALL0` through `CALL3`;
-* one unsigned-byte argument count: `CALL` and `CALLF`;
-* fixed far-call selector word: `CALLF0` through `CALLF3`;
-* implicit block padding: `NEXTB`, which consumes the remaining bytes in the current 256-byte block.
+Local variables are numbered from `0`. The first argument passed by the caller
+is stored in local variable `0`; subsequent arguments are stored in ascending
+order. Any local variable for which no argument was supplied and no initializer
+record is present in the procedure header is initialized to **FALSE**
+(`0x8001`).
 
-### 5.4 Extended-Opcode Operand Classes
+The total number of local variables available in a given procedure is
+determined by bits `0–6` of its procedure header (see §6.1) and may range from
+`0` to `63`.
 
-After the `0x5F` prefix and secondary opcode byte, extended opcodes use the following operand classes:
+> **Note:** The protocol by which the caller's arguments are mapped into the
+> callee's local variables, and the role of procedure-header initializer
+> records, is described in §6.4. The **FALSE** sentinel is defined in §1.5.1.
 
-* no inline operand: all extended opcodes not otherwise listed below;
-* one unsigned byte: `PUTG`, `OPEN`, `DISP`, `XDISP`, `DECMG`, `DECG`, `POPI`, `INCG`, `INCMG`, `STOREMG`, `STOREG`, `RETN`;
-* two code addresses: `SETJMP`.
+### 7.3 Program Globals
 
-### 5.5 Packed One-Byte Families
+**Program globals** are word-sized variables shared across all modules and all
+procedures. The program accesses them using `LOADG`, `PUTG`, `INCG`, and
+`DECG`.
 
-The packed opcode families are defined by opcode bit fields.
+The number of program globals and their initial values are determined by
+metadata in the `.MME` file; see §3.2.3. The maximum number of program globals
+is 256.
 
-#### 5.5.1 `0x60-0x9F`: `VREAD_loc_vec`
+### 7.4 Module Globals
 
-* bits `0-3` select the local slot containing the aggregate handle;
-* bits `4-5` select one of the first four visible word slots to read.
+**Module globals** are word-sized variables with independent values in each
+module. The program accesses them using `LOADMG`, `PUTMG`, `INCMG`, `DECMG`,
+and `STOREMG`.
 
-#### 5.5.2 `0xA0-0xBF`: `PUSH_Ln`
+Module global indices occupy the range `0x00–0xBF`. Indices `0xC0–0xFF` in the
+same numbering space are system variables; see §7.5.
 
-* bits `0-4` select local slots `0..31`.
+The number of module globals may differ between modules. The initial values and
+per-module count are determined by metadata in the `.MME` file. The maximum
+number of module globals is 192 per module.
 
-#### 5.5.3 `0xC0-0xDF`: `PUT_Ln`
+### 7.5 System Variables
 
-* bits `0-4` select local slots `0..31`.
+**System variables** occupy the 64 module-global indices `0xC0–0xFF`. They are
+accessed using `LOADMG` and `PUTMG` at those indices. Unlike module globals,
+system variables have the same values regardless of which module is accessing
+them.
 
-#### 5.5.4 `0xE0-0xFF`: `STORE_Ln`
+Some system variables are read-only. The effect of writing to a read-only
+system variable is undefined.
 
-* bits `0-4` select local slots `0..31`.
+Some system variables trigger an immediate effect when written. Where such a
+trigger is normative, this section states it explicitly.
 
-### 5.6 Floating-Point Operations
+Where no system variable is defined for a given index in the range
+`0xC0–0xFF`, the effect of reading or writing that index is undefined.
 
-Several opcodes work with floating-point numbers, which are encoded as *big-endian* 64-bit IEEE754 doubles. Interpreters running on little-endian systems will likely need to reverse the bytes of floating-point values after reading them from VM memory and before writing them to VM memory.
+The defined system variables are organized below by functional group.
 
-The numbers themselves are stored in RAM, and the arguments passed to the opcodes are their handles. The bytecode program is responsible for allocating all memory used to hold the source and destination numbers.
+#### 7.5.1 Display and Cursor Slots
 
-## 6. Runtime State, VM Memory, and Aggregates
+##### `0xC1` — Screen Output Gate
 
-### 6.1 Execution State
+> **Provisional:** When system variable `0xC1` contains **FALSE** (`0x8001`),
+> screen output is disabled. This behavior has not been confirmed against MME.
 
-The following elements define the execution state, and should be maintained by the interpreter:
+##### `0xC4` — Scroll Area Bottom Row
 
-1. current module context;
-2. current program counter;
-3. current procedure-frame and operand-stack state;
-4. tuple-stack pointer state; and
-5. allocator state for the low and high RAM halves.
+System variable `0xC4` holds the bottom row limit of the bounded scroll area
+used by `XDISP`. See §8.2.5.
 
-The exact method/location of storage is implementation-defined. The allocator state may be stored in VM-visible RAM, but is not required to be.
+##### `0xC5` — Scroll Area Alternate Start Row
 
-### 6.2 Split Logical RAM Model
+System variable `0xC5` holds an alternate start row for bounded scroll
+operations. `XDISP 4` and `XDISP 5` use this value instead of the cursor row
+as the top of the scroll area. See §8.2.5.
 
-The VM exposes a 16-bit logical word-address space covering 128 KiB, distributed across two 64-KiB segments.
+##### `0xC7` — Screen Width
 
-Logical addresses are interpreted as follows:
+System variable `0xC7` contains the screen width in columns minus one.
 
-1. addresses `0x0000..0x7FFF` select the low RAM segment;
-2. addresses `0x8000..0xFFFF` select the high RAM segment;
-3. the lower fifteen bits select the word slot within the chosen segment;
-4. word access uses byte offset `2 * (logical_address & 0x7FFF)` within the chosen segment;
-5. byte access uses the same segment-selection rule and then applies a byte displacement within that word-addressed space.
+##### `0xC8` — Screen Height
 
-Although the address space covers 128 KB, the amount of memory available to the VM at runtime may be less than 128 KB. In that case, the available memory is still split into two equal segments, one starting at logical address `0x0000` and the other starting at logical address `0x8000`, leaving a gap of addresses that are not backed by memory. The result of accessing addresses in that gap is undefined.
+System variable `0xC8` contains the screen height in rows minus one.
 
-### 6.3 Vector and Tuple Allocation
+##### `0xC9` — Cursor Column Backing Word
 
-At addresses past the end of the initial RAM image, memory is managed by one of two allocators: the vector allocator and the tuple allocator.
+System variable `0xC9` holds the column component of the cursor backing
+position. Writing to `0xC9` is the **commit trigger**: the interpreter shall
+update the cursor backing position to the pair formed by the current value of
+`0xCA` and the value written to `0xC9`.
 
-At program startup, a contiguous block of memory at the end of the high memory segment is designated for the tuple stack and managed by the tuple allocator.
+> **Note:** To set a new cursor position, the program must write the desired
+> row to `0xCA` before writing the desired column to `0xC9`, because the
+> commit reads `0xCA` at the time of the write to `0xC9`. See §8.2.1 for the
+> relationship between the cursor backing position and the physical cursor.
 
-The tuple allocator allocates memory starting from the high end of the stack and continuing downward, and may be implemented simply by tracking a pointer to the "top" of the stack.
+##### `0xCA` — Cursor Row Backing Word
 
-The rest of RAM, excluding the tuple stack and the initial RAM image, is a heap managed by the vector allocator. The vector allocation opcodes may allocate memory from either the low or high segment, provided enough free memory is available.
+System variable `0xCA` holds the row component of the cursor backing position.
+Writing to `0xCA` alone does not commit the cursor backing position; a
+subsequent write to `0xC9` is required to commit both components. See §8.2.1.
 
-Memory is always allocated in whole words.
+##### `0xD3` — Active Window-Descriptor Handle
 
-Memory allocated for vectors is only reclaimed when explicitly returned to the allocator with the `VFREE` opcode. The program must keep track of the size of the allocated vector, and pass the same size to `VFREE` when returning the memory. The interpreter may validate the size.
+System variable `0xD3` holds the handle of the most recently activated
+**window descriptor**. A successful `SETWIN` call updates `0xD3` to the
+descriptor handle supplied as its operand. A failed `SETWIN` call clears
+`0xD3` to **FALSE**.
 
-Memory allocated for tuples may be returned to the allocator explicitly by the `TPOP` opcode, or implicitly by the `LONGJMP` and `LONGJMPR` opcodes.
+> **Note:** `0xD3` may be read by the program to determine the current window
+> context. The structure of the window descriptor vector is defined in §8.4.1.
+> The `SETWIN` algorithm is defined in §8.4.3.
 
-The interpreter may keep its memory allocation structures in VM-visible memory. Before the program starts, the interpreter may write memory allocation structures anywhere in the high segment, and after the initial RAM image in the low segment. During execution, the interpreter may write into any unallocated or freed memory outside of the initial RAM image. The result of accessing that memory is undefined.
+##### `0xD5` — Text Attribute Flags
 
-### 6.5 Aggregate Handles and Visible Layout
+System variable `0xD5` holds the active text attribute flags. The following
+bit assignments are defined:
 
-Several opcodes are designed to work with either statically allocated arrays in the initial RAM image, dynamically allocated vectors, or dynamically allocated tuples. Collectively, these structures are known as **aggregates**. The word address of an aggregate may be referred to as a **handle**.
+* bit `0`: reverse video is enabled when set;
+* bit `3`: bright/bold rendering is enabled when set;
+* bit `5`: blink rendering is enabled when set.
 
-Aggregates are generally accessed through 1-based indexes. However, the opcodes that take indexes as inline operands (`VLOADW_`, `VPUTW_`, `VLOADB_`, `VPUTB_`) use 0-based indexes.
+Bits other than `0`, `3`, and `5` are not used by the display backend.
+`0xD5` may be written directly by the program. A successful `SETWIN` call
+also updates `0xD5` by mirroring the low byte of `D[2]` (the attribute word
+of the descriptor vector). See §8.2.2 and §8.4.3.
 
-Opcodes vary in whether they expect an aggregate to start with a "length word"; the name reflects the traditional usage, but the length word may generally be used for purposes other than storing a length. Opcodes that expect a length word start their index numbering with the word after the length word: index 0 is the length word, and index 1 is the following word.
+##### `0xDB` — Color Mode and Beep Enable
 
-The primary opcodes for accessing individual words (`VLOADW`, `VLOADW_`, `VPUTW`, `VPUTW_`) do not expect a length word, and they start their index numbering with the first word of the aggregate.
+The following bit assignments are defined for system variable `0xDB`:
 
-The opcodes for accessing individual bytes (`VLOADB`, `VLOADB_`, `VPUTB`, `VPUTB_`) always expect a length word, and they start their index numbering with the byte after the length word, which is the third byte of the aggregate.
+* bit `0`: set for the color palette, cleared for the monochrome palette;
+* bit `15`: set when the beep facility is enabled.
 
-### 6.6 RAM Strings
+At startup, the monochrome palette is active (bit `0` cleared). See §8.2.2.
 
-Strings stored in VM RAM and used by the interpreter use a Pascal-style layout:
+#### 7.5.2 Keyboard and Input Slots
 
-1. first word: length of the string in bytes;
-2. bytes following the length word: string content.
+##### `0xC0` — KBINPUT Gate
 
-This matches the format expected by `VLOADB` and similar opcodes.
+When system variable `0xC0` is nonzero, `KBINPUT` shall return **FALSE**
+immediately without inspecting the input buffer. When `0xC0` is zero,
+`KBINPUT` operates normally. See §8.3.1.
 
-## 7. Storage Spaces and System Slots
+##### `0xD4` — Ctrl+Break Flag
 
-### 7.1 Storage Classes
+System variable `0xD4` reflects the state of the Ctrl+Break key combination.
 
-Other than the evaluation stack, the data directly visible to the program consists of:
+> **Note:** The precise semantics of `0xD4` — whether it is edge-triggered
+> (set on a key event, cleared by the program) or level-sensitive — are not
+> defined by this edition.
 
-1. local variables;
-2. global variables;
-3. module-global variables;
-4. system variables; and
-5. RAM.
+##### `0xD6` — Lock Key Status
 
-Each of these classes, except system variables, has its own numbering space. Local variable 1, global variable 1, module-global variable 1, and RAM address 1 all coexist separately.
+System variable `0xD6` is read-only. It reflects the current state of the
+keyboard lock keys. The bit assignments are:
 
-### 7.2 Program Globals and Module Globals
+* bit `0`: Num Lock is active when set;
+* bit `1`: Caps Lock is active when set.
 
-Dedicated opcode families access **global variables** and **module-global variables**.
+The effect of writing to `0xD6` is undefined. See §8.3.3.
 
-Global variables have the same values regardless of which procedure or module is accessing them. They are accessed with the `LOADG`, `PUTG`, `INCG`, and `DECG` opcodes.
+#### 7.5.3 File and I/O Slots
 
-The number of global variables is determined by metadata in the `.MME` file, as are their initial values. The maximum number of global variables is 256.
+##### `0xCC` — I/O Record Size
 
-Module-global variables have separate values in each module of the program. They are accessed with the `LOADMG` and `PUTMG` opcodes.
+System variable `0xCC` supplies the record size, in bytes, used by `READREC`
+and `WRITEREC`. See §8.1.4.
 
-The number of module globals, which can differ between modules, is determined by metadata in the `.MME` file, as are their initial values. The maximum number of module globals is 192 per module.
+##### `0xD7` — Selected File Extension
 
-Module globals share a numbering space and opcode family with system variables. Only variables `0x00..0xBF` are module globals.
-
-### 7.3 System Variables
-
-System variables occupy the top 64 slots of the module global numbering space, `0xC0..0xFF`, and are accessed with the same opcodes, `LOADMG` and `PUTMG`. They have the same values regardless of which procedure or module is accessing them.
-
-Some system variables are read-only. The effect of writing to a read-only system variable is undefined.
-
-Some system variables trigger an effect when a value is written to them.
-
-Not all slots in the system variable range are in use. The following system variables are defined:
-
-* `0xC0`: set to nonzero to disable `KBINPUT`;
-* `0xC1`: set to FALSE to disable screen output; (???)
-* `0xC4`, `0xC5`: bottom and top row limits used by bounded scrolling;
-* `0xC7`: screen width, columns - 1;
-* `0xC8`: screen height, rows - 1;
-* `0xC9`, `0xCA`: cursor column and row backing words; writing `0xC9` commits the cursor move;
-* `0xCC`: record size used by `READREC` and `WRITEREC`.
-* `0xCD`, `0xCE`, `0xCF`: current month, day, and year;
-* `0xD0`, `0xD1`, `0xD2`: current hour, minute, and second;
-* `0xD3`: descriptor set by opcode `SETWIN`;
-* `0xD4`: Ctrl+Break flag;
-* `0xD5`: current text printing attributes;
-* `0xD6`: read-only caps/num lock status word;
-* `0xD7`: selected file extension, see below;
-* `0xDA`: `.OBJ` access word, see below;
-* `0xDB`: bit 15 set = beep is enabled, bit 0 set = color is enabled.
-
-The following system variables may be used for implementation-dependent runtime statistics. An interpreter may leave them unimplemented, but should not use them for a different purpose:
-
-* `0xE7`: statistics: `#outc`
-* `0xE8`: statistics: `#outs`
-* `0xE9`: statistics: `#curpos`
-* `0xEA`: statistics: `#disp`
-* `0xEB`: statistics: `#xdisp`
-* `0xEC`: statistics: `#gets`
-* `0xED`: statistics: `#sets`
-* `0xEE`: statistics: `#hsets`
-* `0xEF`: statistics: `#vsets`
-
-### 7.3.1 System Variable 0xD7 (Selected File Extension)
-
-Slot `0xD7` packs a 3-character string into a word as follows:
+System variable `0xD7` encodes a three-character file extension as a packed
+word. The encoding is:
 
 ```
-enc(str[0]) << 11 | enc(str[1]) * 45 | enc(str[2])
-enc(char) is:  0-25 for A-Z
-              26-35 for 0-9
-              36-44 for $ & # @ ! % - _ /  respectively
+word = enc(str[0]) << 11 | enc(str[1]) × 45 | enc(str[2])
 ```
 
-This string represents a file extension chosen by the user. The default extension is `DBF`.
+where the character encoding `enc(c)` maps:
 
-### 7.3.2 System Variable 0xDA (`.OBJ` Access Word)
+* `A–Z` → `0–25`;
+* `0–9` → `26–35`;
+* `$`, `&`, `#`, `@`, `!`, `%`, `-`, `_`, `/` → `36–44`, respectively.
 
-Slot `0xDA` packs the `.OBJ` file's channel number and the approximate start of the read-only data into a word as follows:
+The default value of `0xD7` corresponds to the extension `DBF`.
 
-`(channel of OBJ file) | (header word at 0x0E << 5)`
+##### `0xDA` — `.OBJ` Access Word
 
-The header word at `0x0E`, in turn, is the offset of the start of read-only data divided by 512 (shifted right 9 bits).
+System variable `0xDA` encodes the pre-opened `.OBJ` file channel number and
+the approximate start of the read-only data region as a single word:
+
+```
+word = (channel number of the .OBJ file) | (header_word_0x0E << 5)
+```
+
+where `header_word_0x0E` is the word at offset `0x0E` in the `.OBJ` file
+header, which holds the byte offset of the start of the read-only data region
+divided by 512 (i.e., right-shifted nine bits from the byte offset). The
+channel number occupies the low bits; the start-address component occupies the
+upper bits.
+
+> **Note:** See §3.3 for the read-only data region layout and §8.1.1 for the
+> channel model. Channel 24 is reserved for the printer and is distinct from
+> the `.OBJ` channel.
+
+#### 7.5.4 Date and Time Slots
+
+The following system variables reflect the current date and time as maintained
+by the host environment:
+
+| Slot | Contents |
+|------|----------|
+| `0xCD` | Current month |
+| `0xCE` | Current day of the month |
+| `0xCF` | Current year |
+| `0xD0` | Current hour |
+| `0xD1` | Current minute |
+| `0xD2` | Current second |
+
+> **Note:** The range, epoch, and encoding (e.g., whether month is 1-based or
+> 0-based, whether year is absolute or offset) are not specified by this
+> edition.
+
+#### 7.5.5 Descriptor System Slots
+
+##### `0xD8` — Descriptor Root
+
+System variable `0xD8` holds the handle of the root object used by `LOOKUP`
+and `EXTRACT`. The root object is a four-word vector `R` with the following
+defined fields:
+
+* `R[0]`: handle of the primary lookup table;
+* `R[2]`: base handle added to successful relative descriptor values;
+* `R[3]`: far-procedure selector for the fallback resolver.
+
+(`R[1]` is not defined by this edition.)
+
+Before invoking `LOOKUP` or `EXTRACT`, the program must ensure `0xD8` contains
+a valid handle. See §8.5.1 and §8.5.2 for the `LOOKUP` and `EXTRACT`
+algorithms.
+
+> **Note:** System variable `0xD8` was absent from the §7 system-variable
+> table in earlier editions; it was documented only in the Appendix B entry
+> for `LOOKUP`. This subsection is its canonical definition.
+
+#### 7.5.6 Implementation Statistics Slots
+
+System variables `0xE7–0xEF` are reserved for implementation-defined runtime
+statistics counters. The following slot assignments are defined:
+
+| Slot | Statistic |
+|------|-----------|
+| `0xE7` | `#outc` |
+| `0xE8` | `#outs` |
+| `0xE9` | `#curpos` |
+| `0xEA` | `#disp` |
+| `0xEB` | `#xdisp` |
+| `0xEC` | `#gets` |
+| `0xED` | `#sets` |
+| `0xEE` | `#hsets` |
+| `0xEF` | `#vsets` |
+
+An interpreter may leave any or all of these slots unimplemented. When a
+statistics slot is not implemented, the result of reading or writing that slot
+is undefined. An interpreter that implements a statistics slot shall not use
+that slot for a purpose other than its designated statistic.
 
 ## 8. Host Services
 
-### 8.1 Channel and Record I/O
+This chapter defines the normative interface between the VM and the host
+environment. It covers file and channel I/O, display output, keyboard input,
+the window descriptor system, and the data lookup and extraction system.
 
-The VM exposes files through a channel abstraction. Files can be opened in read-only or read/write mode.
+System variable semantics — the per-slot definitions for `0xC0`, `0xC4`,
+`0xC5`, `0xC9`, `0xCA`, `0xCC`, `0xD3`, `0xD4`, `0xD5`, `0xD6`, `0xD8`,
+`0xDB`, and related slots — are normatively defined in §7.5. This chapter
+describes how those variables are used in context; it does not restate their
+definitions.
 
-There are 25 potential channels, numbered `0..24`. One channel is opened by the interpreter before the program starts; its channel number is given by the low bits of system variable `0xDA`. Handle 24 is reserved for the printer.
+Appendix B contains the per-opcode operand details for every instruction
+mentioned in this chapter. Where this chapter defines an algorithm or
+interface contract, Appendix B cross-references it.
 
-The channel operations are defined as follows:
+---
 
-* `OPEN`: opens a file by name, in a given mode, optionally clobbering the file if it exists or creating it if it doesn't, and returns a channel value on success or FALSE on failure;
-* `CLOSE`: closes a channel;
-* `READ`: transfers a given number of words from a channel into a destination vector;
-* `WRITE`: writes a given number of words from a source vector into a channel;
-* `READREC count, record, channel, vector`: transfers record-oriented data into the destination vector byte payload beginning two bytes past the aggregate base;
-* `WRITEREC count, record, channel, vector`: transfers record-oriented data from the source vector byte payload;
-* `FSIZE`: returns file size in block-like units;
-* `UNLINK`: deletes a named file;
-* `RENAME`: renames one named file to another.
+### 8.1 File and Channel I/O
 
-For record transfer:
+#### 8.1.1 Channel Model
 
-1. system slot `0xCC` supplies the record size for `READREC` and `WRITEREC`;
-2. fixed block transfers elsewhere in the subsystem use `0x200`-byte blocks.
+The VM provides access to files through an integer channel abstraction.
+A **channel** is an integer in the range `0–24` that represents one open
+file or device. Channels are obtained from `OPEN` and released by `CLOSE`.
 
-#### 8.1.1 `OPEN` Mode Byte
+There are 25 channels in total. Channel `24` is reserved for the printer.
 
-The following mode bits are used by the `OPEN` opcode:
+At program start, one channel is already open. Its channel number is supplied
+in the low bits of system variable `0xDA` (see §7.5.3). The program must not
+`CLOSE` this channel unless it intends to stop using the pre-opened file.
 
-Low bits `0-1` select the access family:
+> **Note:** The pre-opened channel provides access to the `.OBJ` file as a
+> sequential byte stream. The program may read from it to access module data.
 
-* `mode & 0x03 == 0x00`: open for reading;
-* `mode & 0x03 == 0x01`: delete or create the target first, then open for writing;
-* `mode & 0x03 == 0x02`: open for read/write;
-* `mode & 0x03 == 0x03`: delete or create the target first, then open for read/write.
+#### 8.1.2 Channel Lifecycle
 
-Additional bits affect the filename resolution process as follows:
+`OPEN` opens or creates a file, assigns a channel to it, and pushes the channel
+on success, or **FALSE** on failure. Its inline byte operand is the mode byte
+(see below). Its two stack inputs are:
 
-* bit 2 (`0x04`): enable search type 1;
-* bit 4 (`0x10`): enable search type 2;
+* `$2`: a string handle identifying the file or device by name;
+* `$1`: an input whose meaning is not defined by this specification.
 
-If neither bit is set, search type 0 is performed. If both bits are set, search type 1 takes precedence.
+`CLOSE` closes the specified channel, releasing it for reuse. It pushes a
+status word: `0` indicates success.
 
-#### 8.1.2 `OPEN` Filename Resolution
+> **Provisional:** The behavior of `CLOSE` when the channel is invalid or
+> already closed has not been confirmed against MME. Implementations should
+> push `0` on success; failure behavior is implementation-defined.
 
-The precise meanings of search types 0, 1, and 2 are not defined by this specification, except that type 1 should be the most exhaustive and type 0 the least exhaustive.
+##### Mode byte
 
-The interpreter may recognize `PRN` as a special filename representing a printer, and `LPT` followed by a digit as aliases for `PRN`.
+The mode byte passed as the inline operand to `OPEN` is structured as follows.
 
-### 8.2 Display-Control Services
+Bits `0–1` select the access family:
 
-Display control is primarily provided by `DISP` and `XDISP`.
+| `mode & 0x03` | Meaning |
+|---|---|
+| `0x00` | Open for reading |
+| `0x01` | Delete or create the file, then open for writing |
+| `0x02` | Open for reading and writing |
+| `0x03` | Delete or create the file, then open for reading and writing |
 
-`DISP` suboperations are:
+Additional bits control filename resolution:
 
-* `DISP 0`: move cursor right one column;
-* `DISP 1`: move cursor left one column;
-* `DISP 2`: move cursor down one row;
-* `DISP 3`: move cursor up one row;
-* `DISP 4`: erase from the current column to the right edge of the active 80-column line, then restore the original cursor position;
-* `DISP 5`: clear from the current row to the bottom of the active display area.
+| Bit | Meaning when set |
+|---|---|
+| `2` (`0x04`) | Enable search type 1 |
+| `4` (`0x10`) | Enable search type 2 |
 
-`XDISP` suboperations are:
+If neither bit is set, search type 0 is used. If both bits are set,
+search type 1 takes precedence over search type 2.
 
-* `XDISP 0`: scroll the area from the cursor row to the bottom row (system variable `0xC4`) downward by `$1` lines, or clear the area when `$1` is zero;
-* `XDISP 1`: scroll upward over the same range, or clear the area when the count is zero;
-* `XDISP 4`: like `XDISP 0` but uses the row in system variable `0xC5` instead of the cursor row;
-* `XDISP 5`: like `XDISP 0` but uses the row in system variable `0xC5` instead of the cursor row;
-* `XDISP 6`: draw a horizontal line `$1` characters wide starting at the cursor.
+> **Provisional:** The precise distinctions between search types 0, 1, and 2
+> are not defined by this specification. The available evidence suggests that
+> type 1 provides more exhaustive filename resolution than type 0, and that
+> type 2 is intermediate, but this ordering has not been confirmed against MME.
+> Implementations that do not reproduce the original DOS search behavior may
+> treat all three search types identically.
 
-### 8.3 Keyboard Polling
+##### Filename resolution
 
-`KBINPUT` is a nonblocking keyboard poll.
+The interpreter may recognize `PRN` as a special filename representing a
+printer, and `LPT` followed by a digit as an alias for `PRN`.
 
-Its VM-visible behavior is:
+#### 8.1.3 Stream Transfer
 
-1. if no key is ready, it pushes **FALSE**;
-2. if input is ready, it returns a key code.
+`READ` and `WRITE` transfer data between an open channel and an aggregate in
+VM RAM.
 
-A blocking read may be constructed by looping with `KBINPUT` and `JUMPF`.
+`READ` reads data from the channel into the aggregate. Its stack inputs are:
 
-System slot `0xC0` acts as an input-enable gate. When nonzero, `KBINPUT` shall return **FALSE** immediately.
+* `$3`: destination aggregate handle;
+* `$2`: channel;
+* `$1`: word count.
 
-Extended keys are returned as `0x1B` followed by a mapped second byte on the next `KBINPUT` call. The following key sequences are defined:
+`READ` transfers `$1 × 2` bytes from the channel into the aggregate. The
+bytes are written into the aggregate's byte payload (starting two bytes past
+the aggregate base), two bytes per word, low byte first, in sequential
+order. If fewer bytes are available in the channel before end-of-file, the
+remainder of the destination payload is filled with zero bytes. `READ` pushes
+`0` on a complete transfer and a nonzero value on a short read.
 
-* Escape: `0x1B 0x1B`;
-* Shift+Tab: `0x1B 0x0F`;
-* Up: `0x1B 0x48`;
-* Down: `0x1B 0x50`;
-* Left: `0x1B 0x4B`;
-* Right: `0x1B 0x4D`;
-* Home: `0x1B 0x47`;
-* End: `0x1B 0x4F`;
-* Page Up: `0x1B 0x49`;
-* Page Down: `0x1B 0x51`;
-* Insert: `0x1B 0x52`;
-* Delete: `0x1B 0x53`;
-* F1 through F10: `0x1B 0x3B` through `0x1B 0x44`;
-* F11: `0x1B 0x85`;
-* F12: `0x1B 0x86`.
+`WRITE` writes data from the aggregate to the channel. Its stack inputs are:
 
-### 8.4 Caps/Num Lock State
+* `$3`: source aggregate handle;
+* `$2`: channel;
+* `$1`: count N.
 
-System slot `0xD6` exposes the state of Caps Lock and Num Lock. The visible bit assignments are:
+`WRITE` reads `N` words from the source aggregate, starting at the first word
+(word index 0), and writes the low byte of each word to the channel as one byte.
+Exactly `N` bytes are written to the channel, one byte per word from the source.
+`WRITE` pushes `0` on success.
 
-* bit `0`: Num Lock;
-* bit `1`: Caps Lock.
+> **Note:** The count operand `N` is simultaneously the number of words
+> consumed from the source aggregate and the number of bytes written to the
+> channel. Each word contributes one byte (its low byte) to the output.
 
-### 8.5 Text Output and Cursor Update
+#### 8.1.4 Record Transfer
 
-The interpreter does not process CR or LF characters as cursor moves. The bytecode program must move the cursor to the next line as needed.
+`READREC` and `WRITEREC` transfer fixed-size records between an open channel
+and an aggregate.
 
-The interpreter tracks a "virtual" cursor position, but does not move the "physical" cursor until a character is printed or `KBINPUT` is executed. (???)
+`READREC` reads records from the channel. Its stack inputs are:
 
-System variable `0xCA` contains the cursor row, and `0xC9` contains the cursor column. Writing to `0xC9` commits the current value of `0xCA` and the new value of `0xC9` to the virtual cursor position.
+* `$4`: destination aggregate handle;
+* `$3`: channel;
+* `$2`: 0-based index of the first record to read;
+* `$1`: number of records to transfer.
 
-### 8.6 Display Backends and Attributes
+The interpreter seeks to byte offset `$2 × S` in the channel, where `S` is
+the record size in bytes (see below), then transfers `$1 × S` bytes into
+the destination aggregate. Bytes are packed two per word in little-endian
+order, starting at the first word (word index 0) of the destination aggregate.
+`READREC` pushes the number of bytes successfully transferred.
 
-System slot `0xD5` contains the active text attributes. This slot can be written manually, and is also updated automatically from `D[2]` when executing `SETWIN`.
+`WRITEREC` writes records to the channel. Its stack inputs are:
 
-Only bits `0`, `3`, and `5` of `0xD5` contribute to the visible attribute:
+* `$4`: source aggregate handle;
+* `$3`: channel;
+* `$2`: 0-based index of the first record to write;
+* `$1`: number of records to transfer.
 
-* bit `0`: enable reverse video;
-* bit `3`: enable bright/bold rendering;
-* bit `5`: enable blink rendering.
+The interpreter seeks to byte offset `$2 × S` in the channel, then
+transfers `$1 × S` bytes from the source aggregate. Words are read starting
+at word index 0 of the source aggregate and written as pairs of bytes in
+little-endian order. `WRITEREC` pushes the number of bytes successfully
+transferred.
 
-### 8.7 Color Mode
+##### Record size
 
-System slot `0xDB` controls whether the interpreter uses a color or monochrome palette. Bit `0` is set for color or cleared for monochrome.
+The record size `S` is derived from system variable `0xCC` (see §7.5.3) as
+follows:
 
-At startup, the monochrome palette is active.
+* If `0xCC` is `0`, the record size is 256 bytes.
+* If `0xCC` is in the range `1–127`, the record size is `0xCC × 2` bytes
+  (that is, `0xCC` is a word count).
+* If `0xCC` is in the range `128–255`, it is a direct byte count.
 
-### 8.8 Descriptor-Oriented Helpers
+#### 8.1.5 File Management
 
-Extended helpers `0x5F 0x21` and `0x5F 0x22` belong to the descriptor and display subsystem.
+`FSIZE` returns the size of the file associated with channel `$1`, expressed
+in units of 256 bytes, truncating any partial block.
 
-This edition assigns the following names:
+`UNLINK` deletes the file named by the string handle `$1` and closes any
+open channels to that file. It pushes `0` on success or **FALSE** on failure.
 
-* `0x5F 0x21`: `WPRINTV`;
-* `0x5F 0x22`: `SETWIN`.
+`RENAME` renames a file. Its stack inputs are:
 
-Their semantics are defined in section 8.13.
+* `$2`: string handle for the current file name;
+* `$1`: string handle for the new file name.
 
-### 8.9 Window Descriptors, `WPRINTV`, and `SETWIN`
+`RENAME` pushes a status word. The exact success and failure values are not
+defined by this specification.
 
-`SETWIN` activates a display window described by descriptor vector `D`.
+---
 
-Stack input:
+### 8.2 Display Services
 
-* one word: descriptor handle `D`.
+The display subsystem provides cursor positioning, text attribute control, and
+two families of screen control operations. System variable semantics for the
+display system are defined in §7.5.1.
 
-Result:
+#### 8.2.1 Cursor Position and Commit
 
-* on success, return `D[0]`;
-* on failure, return **FALSE** and clear the active-descriptor latch.
+The interpreter maintains a cursor position through two system variables:
+`0xCA` (cursor row) and `0xC9` (cursor column). The program positions the
+cursor by writing to these variables. Writing `0xC9` commits the cursor move:
+the interpreter moves the physical cursor to the position encoded by the
+current values of `0xCA` and `0xC9`.
 
-`WPRINTV` is a clipped text-painting operation.
+The program must write `0xCA` before writing `0xC9` if the intended cursor
+position changes both row and column. If only the column changes, writing
+`0xC9` alone is sufficient.
 
-Stack inputs are:
+> **Provisional:** The interpreter does not move the physical cursor immediately
+> when a character is printed. The relationship between physical cursor movement
+> and the logical cursor position tracked by `0xCA`/`0xC9` has not been fully
+> confirmed against MME. In particular, it is not confirmed whether the
+> interpreter defers the physical cursor update until a character is emitted or
+> `KBINPUT` is called.
 
-* `$4 = D`: display descriptor vector;
-* `$3 = S`: source byte vector;
+> **Note:** The interpreter does not translate CR (`0x0D`) or LF (`0x0A`)
+> characters into cursor movement. The program is responsible for advancing
+> the cursor to the next line when needed.
+
+#### 8.2.2 Text Attributes and Color
+
+System variable `0xD5` holds the active text attribute byte (see §7.5.1).
+
+Only three bits of `0xD5` affect the visible display attribute in standard
+PC BIOS text mode:
+
+| Bit | Effect when set |
+|---|---|
+| `0` | Reverse video |
+| `3` | Bright/bold rendering |
+| `5` | Blink rendering |
+
+The attribute may be written directly by the program. It is also updated
+automatically by `SETWIN` (see §8.4.3), which copies the low byte of `D[2]`
+from the active descriptor into `0xD5`.
+
+System variable `0xDB` controls the display color mode (see §7.5.1). Bit `0`
+of `0xDB` is set for color mode and cleared for monochrome mode. The
+monochrome palette is active at startup.
+
+#### 8.2.3 Character Output
+
+`PRCHAR` prints a single code-page-437 character at the current cursor position
+and advances the cursor one column to the right. If the cursor is already at
+the right edge of the screen, it does not advance further. `PRCHAR` pops one
+word; it uses only the low byte of that word as the character code. The code
+must be in the range `0–255`.
+
+`PRINTV` prints a range of bytes from an aggregate as characters. Its stack
+inputs are:
+
+* `$3`: source aggregate handle;
+* `$2`: byte count N;
+* `$1`: byte offset O within the aggregate's payload.
+
+`PRINTV` reads `N` bytes from the aggregate's payload starting at payload byte
+offset `O` (that is, starting at byte `O + 2` from the aggregate's base address).
+Each byte in the range `0x20–0x7E` is printed as the corresponding code-page-437
+character. Bytes outside that range are printed as a space.
+
+The cursor advances one position per byte printed. `PRINTV` does not check or
+update system variable `0xC9` or `0xCA`.
+
+#### 8.2.4 Cursor and Screen Control (`DISP`)
+
+`DISP` performs a simple cursor or screen operation selected by its inline byte
+operand. All `DISP` operations act on the current cursor position and do not
+return a value.
+
+| `DISP` operand | Operation |
+|---|---|
+| `0` | Move cursor right one column |
+| `1` | Move cursor left one column |
+| `2` | Move cursor down one row |
+| `3` | Move cursor up one row |
+| `4` | Erase from the current column to the right edge of the active line, then restore the cursor position |
+| `5` | Clear from the current row to the bottom of the active display area |
+
+#### 8.2.5 Area Scroll and Clear (`XDISP`)
+
+`XDISP` performs a scrolling or line-drawing operation selected by its inline
+byte operand. `XDISP` pops one word `$1` as a line count or character count,
+then pushes `$1` back unchanged.
+
+The scroll operations use the following region boundaries:
+
+* **suboperations 0 and 1**: the scroll area spans from the cursor row to the
+  row in system variable `0xC4` (see §7.5.1).
+* **suboperations 4 and 5**: the scroll area spans from the row in system
+  variable `0xC5` to the row in system variable `0xC4` (see §7.5.1).
+
+When `$1` is zero, scroll operations clear the entire scroll area rather than
+scrolling it.
+
+| `XDISP` operand | Operation |
+|---|---|
+| `0` | Scroll area downward by `$1` lines |
+| `1` | Scroll area upward by `$1` lines |
+| `2` | No effect |
+| `3` | No effect |
+| `4` | Scroll alternate area (from `0xC5`) downward by `$1` lines |
+| `5` | Scroll alternate area (from `0xC5`) upward by `$1` lines |
+| `6` | Draw a horizontal line `$1` characters wide starting at the cursor position |
+
+> **Note:** Suboperations `2` and `3` are confirmed no-ops. Programs must not
+> rely on any side effects from these suboperations.
+
+#### 8.2.6 Screen Geometry Variables
+
+Several system variables define the display dimensions and scroll boundaries
+used by `DISP` and `XDISP`. Their definitions are in §7.5.1:
+
+* `0xC7` — screen width minus one;
+* `0xC8` — screen height minus one;
+* `0xC4` — bottom row of the current scroll area;
+* `0xC5` — top row of the alternate scroll area (used by `XDISP 4` and `5`).
+
+---
+
+### 8.3 Keyboard Services
+
+#### 8.3.1 `KBINPUT` Behavior
+
+`KBINPUT` is a nonblocking keyboard poll. It pushes a key code if a key is
+available, or **FALSE** if no key is ready.
+
+If system variable `0xC0` is nonzero, `KBINPUT` ignores any pending input
+and always pushes **FALSE** (see §7.5.2 for the complete gate rule).
+
+A blocking keyboard read may be constructed by calling `KBINPUT` in a loop
+with `JUMPF`:
+
+```
+:loop
+    KBINPUT
+    JUMPF :loop
+    ; key code is now on top of the stack
+```
+
+#### 8.3.2 Key Code Encoding
+
+Most keys produce a single key code, which `KBINPUT` pushes as a word. Keys
+that have no ASCII equivalent (navigation keys, function keys, and similar
+extended keys) are encoded as a two-step sequence: the first `KBINPUT` call
+that reads the key pushes `0x1B`, and a subsequent `KBINPUT` call pushes a
+second mapped byte. The program must issue two separate `KBINPUT` calls to
+consume an extended key.
+
+The defined two-step sequences are:
+
+| Key | First code | Second code |
+|---|---|---|
+| Escape | `0x1B` | `0x1B` |
+| Shift+Tab | `0x1B` | `0x0F` |
+| Up arrow | `0x1B` | `0x48` |
+| Down arrow | `0x1B` | `0x50` |
+| Left arrow | `0x1B` | `0x4B` |
+| Right arrow | `0x1B` | `0x4D` |
+| Home | `0x1B` | `0x47` |
+| End | `0x1B` | `0x4F` |
+| Page Up | `0x1B` | `0x49` |
+| Page Down | `0x1B` | `0x51` |
+| Insert | `0x1B` | `0x52` |
+| Delete | `0x1B` | `0x53` |
+| F1 | `0x1B` | `0x3B` |
+| F2 | `0x1B` | `0x3C` |
+| F3 | `0x1B` | `0x3D` |
+| F4 | `0x1B` | `0x3E` |
+| F5 | `0x1B` | `0x3F` |
+| F6 | `0x1B` | `0x40` |
+| F7 | `0x1B` | `0x41` |
+| F8 | `0x1B` | `0x42` |
+| F9 | `0x1B` | `0x43` |
+| F10 | `0x1B` | `0x44` |
+| F11 | `0x1B` | `0x85` |
+| F12 | `0x1B` | `0x86` |
+
+#### 8.3.3 Lock State and Break Flag
+
+System variable `0xD6` exposes keyboard lock state (see §7.5.2). Two bits
+are defined:
+
+| Bit of `0xD6` | Meaning when set |
+|---|---|
+| `0` | Num Lock is engaged |
+| `1` | Caps Lock is engaged |
+
+System variable `0xD4` is the Ctrl+Break flag (see §7.5.2). This variable is
+`0` when Ctrl+Break has been pressed since the flag was last cleared, and
+nonzero otherwise.
+
+> **Provisional:** The full behavior of `0xD4` — in particular, when and how
+> it is reset, and whether the program is expected to clear it — has not been
+> confirmed against MME.
+
+---
+
+### 8.4 Window Descriptor System
+
+The window descriptor system provides positioned, clipped text rendering.
+A **window descriptor** is a vector whose visible indexes encode a logical
+cursor position and a reference to a geometry vector that defines the window's
+coordinate mapping.
+
+The two opcodes in this system are `SETWIN` (`0x5F 0x22`) and `WPRINTV`
+(`0x5F 0x21`). Both consume a window descriptor handle and operate on the
+coordinate mapping it encodes. The active descriptor handle is latched in
+system variable `0xD3` (see §7.5.5).
+
+#### 8.4.1 Descriptor Vector Layout
+
+A window descriptor `D` is a vector with at least four visible words:
+
+| Visible index | Role |
+|---|---|
+| `D[1]` | Logical column position (word 0 of the aggregate) |
+| `D[2]` | Logical row position |
+| `D[3]` | Attribute flags word; low byte is mirrored into `0xD5` by `SETWIN` |
+| `D[4]` | Handle of the geometry vector `G` |
+
+> **Note:** Descriptor visible indexes follow the convention defined in §4.5:
+> index `1` is the first data word of the aggregate, `2` the second, and so on.
+> In the SETWIN and WPRINTV algorithms below, the shorthand `D[0]` and `D[3]`
+> refers to aggregate word indexes 0 and 3 (i.e., visible indexes 1 and 4).
+
+For consistency with the current specification and source code, which use
+zero-based aggregate word indexes, this section uses `D[i]` to mean "the word
+at aggregate word index `i`" (i.e., the word at byte offset `i * 2` from the
+aggregate base).
+
+#### 8.4.2 Geometry Vector Layout
+
+A geometry vector `G = D[3]` provides the coordinate origin and bounds for
+one window:
+
+| Aggregate word index | Role |
+|---|---|
+| `G[0]` | Logical column origin (left edge of the window in logical space) |
+| `G[1]` | Logical row origin (top edge of the window in logical space) |
+| `G[2]` | Physical column base (screen column corresponding to `G[0]`) |
+| `G[3]` | Physical row base (screen row corresponding to `G[1]`) |
+| `G[4]` | Column span (exclusive upper bound: valid logical columns are `G[0]` through `G[0] + G[4] − 1`) |
+| `G[5]` | Row span (exclusive upper bound: valid logical rows are `G[1]` through `G[1] + G[5] − 1`) |
+
+#### 8.4.3 `SETWIN` Algorithm
+
+`SETWIN` activates the display window described by descriptor handle `$1`.
+
+On success, `SETWIN` pushes `D[0]` (the logical column).
+On failure, `SETWIN` pushes **FALSE** and clears the active-descriptor
+latch (`0xD3` is set to **FALSE**).
+
+`SETWIN` returns **FALSE** immediately if the descriptor handle is **FALSE**
+or zero.
+
+Otherwise, `SETWIN` validates and maps coordinates as follows:
+
+1. Let `col_delta = D[0] − G[0]`.
+2. Let `row_delta = D[1] − G[1]`.
+3. The descriptor is valid if and only if both:
+   * `0 ≤ col_delta < G[4]`; and
+   * `0 ≤ row_delta < G[5]`.
+4. If the descriptor is not valid, set `0xD3` to **FALSE** and return
+   **FALSE**.
+
+On success, `SETWIN` shall:
+
+1. compute `physical_col = G[2] + col_delta`;
+2. compute `physical_row = G[3] + row_delta`;
+3. store the descriptor handle in system variable `0xD3` (see §7.5.5);
+4. extract bits `0–7` of `D[2]` (the low byte of the attribute flags word)
+   and store them in system variable `0xD5` (see §7.5.1);
+5. move the physical cursor to `(physical_col, physical_row)`;
+6. return `D[0]`.
+
+#### 8.4.4 `WPRINTV` Algorithm
+
+`WPRINTV` paints a clipped range of bytes from a source string into a display
+window. Its stack inputs are:
+
+* `$4 = D`: window descriptor handle;
+* `$3 = S`: source aggregate (string) handle;
 * `$2 = N`: requested character count;
-* `$1 = O`: source byte offset.
+* `$1 = O`: source payload byte offset.
 
-The descriptor vector `D` has the following structure:
+`WPRINTV` returns the result of the final `SETWIN` call on success, or
+**FALSE** on failure.
 
-* `D[0]`: logical column;
-* `D[1]`: logical row;
-* `D[2]`: attribute flags word;
-* `D[3]`: handle of geometry vector `G`.
+`WPRINTV` returns **FALSE** immediately if `D` or `S` is **FALSE** or zero,
+or if the geometry handle `D[3]` is **FALSE** or zero.
 
-The geometry vector `G = D[3]` has the following structure:
+Otherwise, `WPRINTV` shall operate as follows:
 
-* `G[0]`: logical column origin;
-* `G[1]`: logical row origin;
-* `G[2]`: physical column base;
-* `G[3]`: physical row base;
-* `G[4]`: column span, exclusive upper bound for `D[0] - G[0]`;
-* `G[5]`: row span, exclusive upper bound for `D[1] - G[1]`.
+1. Read the source byte limit `L = S[0]` (the first word of the source
+   aggregate, which is the Pascal length word).
+2. Let the requested logical start column be `start = D[0]`.
+3. Let the requested logical end column be `end_req = start + N`, clipped
+   against the source limit so that `end = min(end_req, start + max(0, L − O))`.
+4. Let `win_min = G[0]` and `win_max = G[0] + G[4]`.
+5. Apply left clipping: if `start < win_min`, advance `O` by `win_min − start`
+   and set `start = win_min`.
+6. Apply right clipping: set `end_clipped = min(end, win_max)`.
+7. Compute the visible character count `count = max(0, end_clipped − start)`.
+   An implementation may cap the count at a maximum of 100 characters per call.
+8. Write `start` into `D[0]`.
+9. Call `SETWIN(D)`. If `SETWIN` returns **FALSE**, write `end_req` into
+   `D[0]` and return **FALSE**.
+10. If `count > 0`, print `count` bytes from the source aggregate starting at
+    payload byte offset `O`, using the `PRINTV` character-printing rules.
+11. Write `end_req` into `D[0]`.
+12. Call `SETWIN(D)` again so that the descriptor reflects the logical
+    post-print cursor column even when the visible span was right-clipped.
+13. Return the result of the second `SETWIN` call.
 
-`SETWIN` shall validate and map coordinates as follows:
+> **Note:** Step 12 advances the descriptor's logical column to the column
+> that follows the last requested character, regardless of clipping.
+> This ensures that a caller can iterate `WPRINTV` calls without manually
+> tracking how many characters were actually visible.
 
-* `col_delta = D[0] - G[0]`;
-* `row_delta = D[1] - G[1]`;
+---
 
-The descriptor is valid if and only if:
+### 8.5 Data Lookup and Extraction
 
-* `0 <= col_delta < G[4]`; and
-* `0 <= row_delta < G[5]`.
+The data lookup and extraction system provides access to a structured
+descriptor table. `LOOKUP` resolves a packed two-level key to a descriptor
+vector handle. `EXTRACT` traverses and extracts data from a variety of
+packed record layouts.
 
-On success:
+Both operations depend on system variable `0xD8`, which holds the handle of
+a root vector `R` that anchors the descriptor table (see §7.5.5).
 
-* `physical_col = G[2] + col_delta`;
-* `physical_row = G[3] + row_delta`.
+#### 8.5.1 Field Descriptors
 
-`SETWIN` shall then:
+A **field descriptor** is a 16-bit packed key that identifies a specific
+descriptor vector in a two-level table. The encoding is:
 
-1. record the active descriptor in interpreter state;
-2. mirror the low byte of `D[2]` into system slot `0xD5`;
-3. commit the cursor move.
+* **bits 0–6** (low 7 bits): primary 1-based index `I` into the primary table;
+* **bits 8–15** (high byte): secondary 1-based index `J` into the secondary
+  table selected by `I`.
 
-`WPRINTV` shall operate in the following order:
+A field descriptor with `I = 0` or `J = 0` is invalid; passing one to
+`LOOKUP` produces undefined behavior.
 
-1. read the source bound from `S[0]`;
-2. compute the requested logical end column `D[0] + N`;
-3. clip on the left against `G[0]` and on the right against `G[0] + G[4]`;
-4. if left clipping occurs, advance both source offset and logical start column;
-5. call `SETWIN` on the visible start position;
-6. if that `SETWIN` fails, emit nothing;
-7. otherwise emit the visible span of bytes from the source vector;
-8. advance `D[0]` to the logical post-print column; and
-9. call `SETWIN` again so that descriptor state reflects logical cursor motion even when the visible span was right-clipped.
+The root object `R = 0xD8` is a four-word vector:
 
-In ordinary PC BIOS text mode, only bits `0`, `3`, and `5` of `D[2]` affect the rendered text attribute.
+| Aggregate word index | Role |
+|---|---|
+| `R[0]` | Handle of the primary lookup table |
+| `R[1]` | Not defined by this specification |
+| `R[2]` | Base handle added to relative descriptor values |
+| `R[3]` | Procedure selector for the fallback resolver |
+
+#### 8.5.2 `LOOKUP`
+
+`LOOKUP` resolves a field descriptor `$1` to a descriptor vector handle.
+
+The lookup process is:
+
+1. Read the primary table handle `P = R[0]`.
+2. Read the secondary table handle `S = P[2 × (I − 1)]`, where `I` is the
+   primary index extracted from `$1`.
+3. If `S` is `0` or **FALSE**, initiate a far call to the fallback resolver
+   `R[3]`, passing the original packed key as its sole argument. The return
+   value of that call is the result of the `LOOKUP` instruction.
+4. Otherwise, read the relative descriptor value `D = S[J − 1] & 0x3FFF`,
+   where `J` is the secondary index extracted from `$1`.
+5. If `D ≠ 0x3FFF`, push `R[2] + D` as the result.
+6. If `D = 0x3FFF`, initiate the same fallback far call to `R[3]`.
+
+> **Note:** The fallback far call does not return to the instruction following
+> `LOOKUP`. Instead, `LOOKUP` arranges for the far call's eventual return to
+> deliver its return value directly to the caller of `LOOKUP`. A synchronous
+> path through the primary table and direct `R[2] + D` addition is distinct
+> from a fallback path that punts to the resolver procedure.
+
+#### 8.5.3 `EXTRACT`
+
+`EXTRACT` is a multi-mode descriptor walker and extractor. Given an aggregate
+containing packed record data, it selects a field or component from that data,
+optionally copies it to a destination aggregate, and pushes the byte length of
+the selected item (or **FALSE** on failure).
+
+The eight stack inputs are, from deepest (`$8`) to shallowest (`$1`):
+
+| Stack position | Name | Role |
+|---|---|---|
+| `$8` | `B` | Base aggregate handle |
+| `$7` | `S` | Available span, in words |
+| `$6` | `D` | Destination aggregate handle, or **FALSE** for a read-only query |
+| `$5` | `A` | Auxiliary selector |
+| `$4` | `K` | Auxiliary selector or starting word offset |
+| `$3` | `O` | Explicit word offset within the adjusted source, or **FALSE** |
+| `$2` | `G` | Nonzero-content guard, or **FALSE** |
+| `$1` | `M` | Mode or component selector |
+
+##### Data layouts
+
+`EXTRACT` recognizes three encoded layouts:
+
+An **ordinary record** begins with a header word whose low byte is a tag and
+whose high byte is a component count. If the component count is zero, the
+record payload is a single packed field. Otherwise, the payload is a sequence
+of that many packed fields.
+
+A **packed field** begins with a length byte `L`:
+
+* If bit 7 of `L` is clear, the field contains `L` data bytes following the
+  length byte, and its encoded size is `L + 1` bytes rounded up to the next
+  whole number of words.
+* If bit 7 of `L` is set, the field is a fixed-size 8-byte real value occupying
+  4 words.
+
+A **typed field** begins with a header word whose low byte is a kind and
+whose high byte is a component count:
+
+* If the header word is `0`, the field is empty and occupies one word.
+* If `kind = 0`, the following word gives the total field length in words, and
+  the remaining bytes form a variable-size composite payload.
+* If `kind > 0`, the field contains `count` fixed-width components, each
+  exactly `kind` bytes long; the total field size is
+  `1 + ⌈count × kind / 2⌉` words.
+
+##### Step 1: Computing the effective base
+
+1. If `K` is not **FALSE**, treat `K` as an initial word offset into `B` and
+   advance past `A` typed fields (using typed-field sizing rules) to obtain
+   the effective base `E` and the remaining word span `S' = S − (E − B)`.
+2. Otherwise, treat `A` as a raw word offset: `E = B + A`, `S' = S − A`.
+
+##### Step 2: Selecting the target item
+
+Once `E` and `S'` are established:
+
+1. If `O` is not **FALSE**, interpret `E + O` as the start of one ordinary
+   record and operate on that record.
+2. Otherwise, if `M` is not **FALSE**, first attempt to interpret `E` as the
+   start of an ordinary record; if that fails, reinterpret `E` as a typed
+   field.
+3. Otherwise, if `G` is not **FALSE**, treat `G` raw bytes starting at `E`
+   as the selected byte span (raw-byte-span path).
+4. Otherwise, treat `E` as starting with a leading packed field whose byte
+   count is taken from the low byte of its first word (leading-packed-field
+   path).
+
+##### Step 3: Applying the mode
+
+`M` determines the result:
+
+* **`M = FALSE`** — operate on the whole selected item.
+* **`M = 0`** or **`M = 0xFFFF`** — return the selected item's high-byte
+  component count field.
+* **`M = n` where `n > 0`** — select the `n`th component of the selected item.
+
+In whole-item mode:
+
+* In ordinary-record path: the result is the payload length in bytes; if `D`
+  is a usable destination of sufficient capacity, only the payload bytes are
+  copied there.
+* In typed-field path: the result is the payload length in bytes; if `D` is
+  large enough, the copy includes the typed field starting at its header.
+* In raw-byte-span path: the result is exactly `G` bytes; those bytes are
+  copied to `D` if `D` is large enough.
+* In leading-packed-field path: the result is the field byte length; that many
+  raw bytes are copied from the word immediately following the length word.
+
+In component-selection mode (`M = n > 0`):
+
+* In ordinary-record path: component `n` is the `n`th packed subfield of the
+  record payload.
+* In typed-field path with `kind = 0`: component `n` is the `n`th packed
+  subfield of the composite payload.
+* In typed-field path with `kind > 0`: component `n` is the `n`th fixed-width
+  component, exactly `kind` bytes long.
+* In all component-selection paths, the result is the selected component's byte
+  length; the bytes are copied to `D` if `D` is large enough.
+
+##### Guard behavior
+
+The optional guard `G` applies in the whole-item ordinary-record path, the
+whole-item typed-field path, and typed-field component extraction. In those
+paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
+**FALSE** instead of copying or reporting the span.
+
+##### Failure conditions
+
+`EXTRACT` returns **FALSE** if:
+
+* the base handle `B` is invalid;
+* the selected structure would extend past the available span `S` in words;
+* the requested component `n` does not exist;
+* the leading-packed-field path encounters a field of length zero; or
+* a guarded selection (`G` ≠ **FALSE**) finds no nonzero byte in the
+  selected span.
+
+---
+
 
 ## Appendix A. Table of Opcodes
 
@@ -983,75 +2210,120 @@ In ordinary PC BIOS text mode, only bits `0`, `3`, and `5` of `D[2]` affect the 
 
 ## Appendix B. Opcode Reference
 
+This appendix is the authoritative per-opcode definition of the Cornerstone VM
+instruction set. Each entry states the opcode byte(s), mnemonic, inline operand
+class, net stack effect (words popped / words pushed), and full behavioral
+description, including edge cases and implementation constraints.
+
+Where a behavioral rule is canonical in a body chapter, this appendix
+cross-references that section and provides only the per-opcode interface
+description and any additional operand-level constraints. For the compact
+summary table, see Appendix A.
+
+Operand classes used in entries below:
+
+- **B** — one inline byte
+- **W** — one inline word (two bytes, little-endian)
+- **WW** — two inline words
+- **-** — no inline operand bytes
+
+Stack-effect notation: `P/Q` means P words are consumed from the evaluation
+stack (top-to-bottom as `$1`, `$2`, …) and Q words are produced. Q = `varies`
+means the count depends on a runtime value.
+
+---
+
 ### `0x00 BREAK`
 
 Operands: -
 Pop/Push: 0/0
 
-reserved debug-trap or breakpoint operation. Structural decoding is defined; full VM-visible semantics are not defined by this edition.
+Reserved debug-trap or breakpoint slot. The structural decoding of this byte as
+a no-operand base opcode is defined. No VM-visible behavior is defined by this
+edition of the specification.
+
+> **Provisional:** The intended semantics of `BREAK` (halt, signal debugger, or
+> silent no-op) have not been confirmed against MME.
+
+---
 
 ### `0x01 ADD`
 
 Operands: -
 Pop/Push: 2/1
 
-Integer addition: `$2 + $1`.
+Integer addition: push `$2 + $1`.
+
+---
 
 ### `0x02 SUB`
 
 Operands: -
 Pop/Push: 2/1
 
-Integer subtraction: `$2 - $1`.
+Integer subtraction: push `$2 - $1`.
+
+---
 
 ### `0x03 MUL`
 
 Operands: -
 Pop/Push: 2/1
 
-Integer multiplication: `$2 * $1`.
+Integer multiplication: push `$2 * $1`.
+
+---
 
 ### `0x04 DIV`
 
 Operands: -
 Pop/Push: 2/1
 
-Integer division: `$2 / $1`.
+Integer division: push `$2 / $1`.
+
+---
 
 ### `0x05 MOD`
 
 Operands: -
 Pop/Push: 2/1
 
-Integer modulus: `$2 mod $1`.
+Integer modulus: push `$2 mod $1`.
 
-Note, this instruction must not return a negative value. Therefore, it cannot be
-implemented as a direct wrapper for the `%` operator in some common languages;
-`$1` must be added to a negative result to make it positive.
+The result must not be negative. When the dividend or divisor is negative, the
+implementation must add `$1` to any negative intermediate result to produce a
+non-negative value. Implementations that use the host language's `%` operator
+must apply this correction explicitly.
+
+---
 
 ### `0x06 NEG`
 
 Operands: -
 Pop/Push: 1/1
 
-Integer negation: `-$1`.
+Integer negation: push `-$1`.
+
+---
 
 ### `0x07 ASHIFT`
 
 Operands: -
 Pop/Push: 2/1
 
-push `$2` arithmetically shifted by `$1` bits. Positive counts shift left; negative counts shift right with sign extension.
+Arithmetic shift: push `$2` shifted left by `$1` bit positions, or right if
+`$1` is negative, extending the sign bit for right shifts.
 
-Arithmetic shift: `$2` shifted left by `$1` bits, or right if `$1` is negative,
-extending the sign bit for right shifts.
+---
 
 ### `0x08 INCL`
 
 Operands: B
 Pop/Push: 0/1
 
-Increment local `$B` and push the new value.
+Increment local variable `$B` and push the new value.
+
+---
 
 ### `0x09 PUSH8`
 
@@ -1060,6 +2332,8 @@ Pop/Push: 0/1
 
 Push constant `8`.
 
+---
+
 ### `0x0A PUSH4`
 
 Operands: -
@@ -1067,12 +2341,16 @@ Pop/Push: 0/1
 
 Push constant `4`.
 
+---
+
 ### `0x0B DECL`
 
 Operands: B
 Pop/Push: 0/1
 
-Decrement local `$B` and push the new value.
+Decrement local variable `$B` and push the new value.
+
+---
 
 ### `0x0C PUSHm1`
 
@@ -1081,6 +2359,8 @@ Pop/Push: 0/1
 
 Push constant `0xFFFF` (`-1`).
 
+---
+
 ### `0x0D PUSH3`
 
 Operands: -
@@ -1088,182 +2368,255 @@ Pop/Push: 0/1
 
 Push constant `3`.
 
+---
+
 ### `0x0E AND`
 
 Operands: -
 Pop/Push: 2/1
 
-Bitwise AND: `$2 & $1`.
+Bitwise AND: push `$2 & $1`.
+
+---
 
 ### `0x0F OR`
 
 Operands: -
 Pop/Push: 2/1
 
-Bitwise OR: `$2 | $1`.
+Bitwise OR: push `$2 | $1`.
+
+---
 
 ### `0x10 SHIFT`
 
 Operands: -
 Pop/Push: 2/1
 
-Logical shift: `$2` shifted left by `$1` bits, or right if `$1` is negative,
-extending with zeros for right shifts.
+Logical shift: push `$2` shifted left by `$1` bit positions, or right if `$1`
+is negative, filling vacated bits with zero.
+
+---
 
 ### `0x11 VALLOC`
 
 Operands: -
 Pop/Push: 1/1
 
-Allocate a vector with a size of `$1` total words, and push its handle.
+Allocate a vector of `$1` total words from the vector heap and push its handle.
 
-The precise operation of the allocator is not defined by this specification.
+> **Note:** The argument `$1` is the **total** word count of the allocation:
+> the number of words the allocator reserves in the vector heap, including any
+> internal header words used by the implementation. The program's responsibility
+> is to pass the same total count to `VFREE` when releasing the vector.
+
+The precise operation of the allocator is implementation-defined; see §4.3.
+
+---
 
 ### `0x12 VALLOCI`
 
 Operands: -
 Pop/Push: varies/1
 
-Pop `$1` as a word count, then pop that many initializer words and allocate a
-vector containing them in original push order (first word pushed is stored at
-index 1).
+Pop `$1` as a word count, then pop that many initializer words from the
+evaluation stack and allocate a vector containing them in push order: the first
+word pushed is stored at word offset 0. Push the new vector handle.
 
-The precise operation of the allocator is not defined by this specification.
+The precise operation of the allocator is implementation-defined; see §4.3.
+
+---
 
 ### `0x13 VFREE`
 
 Operands: -
 Pop/Push: 2/0
 
-Free the vector block identified by `$2`, using `$1` as the size in words. `$2`
-must have been previously allocated by `VALLOC` or `VALLOCI`, and `$1` must
-match the word count used for allocation.
+Free the vector identified by handle `$2`, using `$1` as the total word count.
+`$2` must have been previously returned by `VALLOC` or `VALLOCI`, and `$1`
+must match the total word count used at allocation time.
 
-The precise operation of the allocator is not defined by this specification.
+The precise operation of the allocator is implementation-defined; see §4.3.
+
+---
 
 ### `0x14 TALLOC`
 
 Operands: -
 Pop/Push: 1/1
 
-Allocate a tuple with `$1` visible words and push its handle.
+Allocate a tuple with `$1` visible words from the tuple stack and push its
+handle. See §4.4 for the tuple allocator model.
+
+---
 
 ### `0x15 TALLOCI`
 
 Operands: -
 Pop/Push: varies/1
 
-Pop `$1` as a word count, then pop that many initializer words and allocate a
-tuple containing them in original push order (first word pushed is stored at
-index 1).
+Pop `$1` as a word count, then pop that many initializer words from the
+evaluation stack and allocate a tuple containing them in push order: the first
+word pushed is stored at visible index 1. Push the new tuple handle. See §4.4
+for the tuple allocator model.
+
+---
 
 ### `0x16 VLOADW`
 
 Operands: -
 Pop/Push: 2/1
 
-Load a word from handle `$2` using 1-based word index `$1 + 1` (i.e., skipping
-an initial length word).
+Load a word from handle `$2` at zero-based word offset `$1` from the start of
+the aggregate. No length-word skip is performed; word offset 0 addresses the
+first word of the aggregate.
+
+---
 
 ### `0x17 VLOADB`
 
 Operands: -
 Pop/Push: 2/1
 
-Load a byte from handle `$2` using 1-based word index `$1 + 2` (i.e., skipping
-an initial length word).
+Load a byte from handle `$2` at byte offset `$1 + 2` from the start of the
+aggregate. The `+2` accounts for the initial two-byte length word; a value of
+`$1 = 0` addresses the first byte of the payload. See §4.5 for the aggregate
+layout convention.
+
+---
 
 ### `0x18 VLOADW_`
 
 Operands: B
 Pop/Push: 1/1
 
-Load a word from handle `$1` using the inline zero-based word offset `$B`.
+Load a word from handle `$1` at the inline zero-based word offset `$B` from the
+start of the aggregate. No length-word skip is performed.
+
+---
 
 ### `0x19 VLOADB_`
 
 Operands: B
 Pop/Push: 1/1
 
-Load a byte from handle `$1` using the inline zero-based byte offset `$B`.
+Load a byte from handle `$1` at the inline zero-based byte offset `$B` from the
+start of the aggregate. No length-word skip is performed.
+
+---
 
 ### `0x1A VPUTW`
 
 Operands: -
 Pop/Push: 3/0
 
-Store `$1` into handle `$3` at 1-based word index `$2 + 1` (i.e., skipping an
-initial length word),
+Store `$1` into handle `$3` at zero-based word offset `$2` from the start of
+the aggregate. No length-word skip is performed; word offset 0 addresses the
+first word of the aggregate.
+
+---
 
 ### `0x1B VPUTB`
 
 Operands: -
 Pop/Push: 3/0
 
-Store the low byte of `$1` into handle `$3` at 1-based byte index `$2 + 2`
-(i.e., skipping an initial length word).
+Store the low byte of `$1` into handle `$3` at byte offset `$2 + 2` from the
+start of the aggregate. The `+2` accounts for the initial two-byte length word;
+a value of `$2 = 0` addresses the first byte of the payload. See §4.5 for the
+aggregate layout convention.
+
+---
 
 ### `0x1C VPUTW_`
 
 Operands: B
 Pop/Push: 2/0
 
-Store `$1` into handle `$2` at the inline zero-based word offset `$B`.
+Store `$1` into handle `$2` at the inline zero-based word offset `$B` from the
+start of the aggregate. No length-word skip is performed.
+
+---
 
 ### `0x1D VPUTB_`
 
 Operands: B
 Pop/Push: 2/0
 
-Store the low byte of `$1` into handle `$2` at the inline zero-based byte offset
-`$B`.
+Store the low byte of `$1` into handle `$2` at the inline zero-based byte
+offset `$B` from the start of the aggregate. No length-word skip is performed.
+
+---
 
 ### `0x1E VECSETW`
 
 Operands: -
 Pop/Push: 3/1
 
-Fill handle `$3` with `$2` copies of the word `$1` (skipping an initial length
-word), then leave that handle on the stack.
+Fill handle `$3` with `$2` copies of the word `$1`, then push `$3`.
+
+> **Provisional:** Whether this instruction skips an initial length word when
+> computing the fill region has not been confirmed against MME.
+
+---
 
 ### `0x1F VECSETB`
 
 Operands: -
 Pop/Push: 3/1
 
-Fill handle `$3` with `$2` copies of the low byte of `$1` (skipping an initial
-length word), then leave that handle on the stack.
+Fill handle `$3` with `$2` copies of the low byte of `$1`, then push `$3`.
+
+> **Provisional:** Whether this instruction skips an initial length word when
+> computing the fill region has not been confirmed against MME.
+
+---
 
 ### `0x20 VECCPYW`
 
 Operands: -
 Pop/Push: 3/1
 
-Copy `$2` words from source handle `$3` to destination handle `$1` (skipping an
-initial length word), then leave the destination handle on the stack.
+Copy `$2` words from source handle `$3` to destination handle `$1`, then push
+`$1`.
+
+> **Provisional:** Whether this instruction skips an initial length word in
+> either the source or destination aggregate has not been confirmed against MME.
+
+---
 
 ### `0x21 VECCPYB`
 
 Operands: -
 Pop/Push: 5/1
 
-Copy `$4` bytes from source handle `$5` at zero-based byte offset `$2` (skipping
-an initial length word) to destination handle `$3` at zero-based byte offset
-`$1`, then leave the destination handle on the stack.
+Copy `$4` bytes from source handle `$5` at zero-based byte offset `$2` to
+destination handle `$3` at zero-based byte offset `$1`, then push `$3`.
+
+> **Provisional:** Whether an initial length word is skipped in either
+> aggregate when computing the base byte offset has not been confirmed against
+> MME.
+
+---
 
 ### `0x22 LOADG`
 
 Operands: B
 Pop/Push: 0/1
 
-Push the value of program global variable `$B`.
+Push the value of program global `$B`.
+
+---
 
 ### `0x23 LOADMG`
 
 Operands: B
 Pop/Push: 0/1
 
-Push the value of module global variable or system variable `$B`.
+Push the value of module global `$B` (if `$B` is in `0x00–0xBF`) or system
+variable `$B` (if `$B` is in `0xC0–0xFF`). See §7.4 and §7.5.
+
+---
 
 ### `0x24 PUSH2`
 
@@ -1272,6 +2625,8 @@ Pop/Push: 0/1
 
 Push constant `2`.
 
+---
+
 ### `0x25 PUSHW`
 
 Operands: W
@@ -1279,19 +2634,28 @@ Pop/Push: 0/1
 
 Push the inline word value `$W`.
 
+---
+
 ### `0x26 PUSHB`
 
 Operands: B
 Pop/Push: 0/1
 
-Push the inline byte value `$B`, with sign extension. (???)
+Push the inline byte value `$B`.
+
+> **Provisional:** Whether the byte value is zero-extended or sign-extended to
+> a 16-bit word has not been confirmed against MME.
+
+---
 
 ### `0x27 PUSH_NIL`
 
 Operands: -
 Pop/Push: 0/1
 
-Push **FALSE** (`0x8001`).
+Push **FALSE** (`0x8001`). See §1.5.1.
+
+---
 
 ### `0x28 PUSH0`
 
@@ -1300,12 +2664,16 @@ Pop/Push: 0/1
 
 Push constant `0`.
 
+---
+
 ### `0x29 DUP`
 
 Operands: -
 Pop/Push: 0/1
 
-Duplicate the top stack word.
+Duplicate the top word of the evaluation stack, pushing a second copy.
+
+---
 
 ### `0x2A PUSHm8`
 
@@ -1314,12 +2682,16 @@ Pop/Push: 0/1
 
 Push constant `0xFFF8` (`-8`).
 
+---
+
 ### `0x2B PUSH5`
 
 Operands: -
 Pop/Push: 0/1
 
 Push constant `5`.
+
+---
 
 ### `0x2C PUSH1`
 
@@ -1328,12 +2700,17 @@ Pop/Push: 0/1
 
 Push constant `1`.
 
+---
+
 ### `0x2D PUTMG`
 
 Operands: B
 Pop/Push: 1/0
 
-Store `$1` into the module global variable or system variable `$B`.
+Store `$1` into module global `$B` (if `$B` is in `0x00–0xBF`) or system
+variable `$B` (if `$B` is in `0xC0–0xFF`). See §7.4 and §7.5.
+
+---
 
 ### `0x2E PUSHFF`
 
@@ -1342,107 +2719,151 @@ Pop/Push: 0/1
 
 Push constant `0x00FF` (`255`).
 
+---
+
 ### `0x2F POP`
 
 Operands: -
 Pop/Push: 1/0
 
-Discard the top stack word.
+Discard the top word of the evaluation stack.
+
+---
+
+### `0x30–0x3E` (reserved)
+
+These thirteen base opcode values are reserved. No behavior is defined for
+them by this edition of the specification. The interpreter's behavior when
+executing a reserved opcode is undefined.
+
+---
 
 ### `0x3F CALL0`
 
 Operands: W
 Pop/Push: 0/varies
 
-Near call to code offset `$W` in the current module, with zero arguments.
+Near call to the procedure at procedure offset `$W` in the current module,
+passing zero arguments. See §6.3.
+
+---
 
 ### `0x40 CALL1`
 
 Operands: W
 Pop/Push: 1/varies
 
-Near call to code offset `$W` in the current module, with one argument popped
-from the stack.
+Near call to the procedure at procedure offset `$W` in the current module,
+passing one argument popped from the evaluation stack. See §6.3.
+
+---
 
 ### `0x41 CALL2`
 
 Operands: W
 Pop/Push: 2/varies
 
-Near call to code offset `$W` in the current module, with two arguments popped
-from the stack.
+Near call to the procedure at procedure offset `$W` in the current module,
+passing two arguments popped from the evaluation stack. See §6.3.
+
+---
 
 ### `0x42 CALL3`
 
 Operands: W
 Pop/Push: 3/varies
 
-Near call to code offset `$W` in the current module, with three arguments popped
-from the stack.
+Near call to the procedure at procedure offset `$W` in the current module,
+passing three arguments popped from the evaluation stack. See §6.3.
+
+---
 
 ### `0x43 CALL`
 
 Operands: B
 Pop/Push: varies/varies
 
-Near call to code offset `$1` in the current module, with `$B` arguments popped
-from the stack.
+Near call to the procedure at the procedure offset given by `$1`, in the
+current module, passing `$B` arguments popped from the evaluation stack.
+See §6.3.
+
+---
 
 ### `0x44 CALLF0`
 
 Operands: W
 Pop/Push: 0/varies
 
-Far call to selector `$W`, with zero arguments.
+Far call to procedure selector `$W`, passing zero arguments. See §6.3.
+
+---
 
 ### `0x45 CALLF1`
 
 Operands: W
 Pop/Push: 1/varies
 
-Far call to selector `$W`, with one argument popped from the stack.
+Far call to procedure selector `$W`, passing one argument popped from the
+evaluation stack. See §6.3.
+
+---
 
 ### `0x46 CALLF2`
 
 Operands: W
 Pop/Push: 2/varies
 
-Far call to selector `$W`, with two arguments popped from the stack.
+Far call to procedure selector `$W`, passing two arguments popped from the
+evaluation stack. See §6.3.
+
+---
 
 ### `0x47 CALLF3`
 
 Operands: W
 Pop/Push: 3/varies
 
-Far call to selector `$W`, with three arguments popped from the stack.
+Far call to procedure selector `$W`, passing three arguments popped from the
+evaluation stack. See §6.3.
+
+---
 
 ### `0x48 CALLF`
 
 Operands: B
 Pop/Push: varies/varies
 
-Far call to selector `$1`, with `$B` arguments popped from the stack.
+Far call to the procedure selector given by `$1`, passing `$B` arguments
+popped from the evaluation stack. See §6.3.
+
+---
 
 ### `0x49 RETURN`
 
 Operands: -
 Pop/Push: 1/1
 
-Return `$1` to the caller as a one-word result.
+Return `$1` to the caller as a one-word result. See §6.6.
+
+---
 
 ### `0x4A RFALSE`
 
 Operands: -
 Pop/Push: 0/1
 
-Return **FALSE** to the caller as a one-word result.
+Return **FALSE** (`0x8001`) to the caller as a one-word result. See §6.6.
+
+---
 
 ### `0x4B RZERO`
 
 Operands: -
 Pop/Push: 0/1
 
-Return `0` to the caller as a one-word result.
+Return `0` to the caller as a one-word result. See §6.6.
+
+---
 
 ### `0x4C PUSH6`
 
@@ -1451,21 +2872,29 @@ Pop/Push: 0/1
 
 Push constant `6`.
 
+---
+
 ### `0x4D HALT`
 
 Operands: W
 Pop/Push: 0/0
 
-Terminate execution with halt code `$W`. Code `1` means normal termination; any
-other code means abnormal termination.
+Terminate execution with halt code `$W`. A halt code of `1` indicates normal
+termination; any other value indicates abnormal termination. See §6.8.
+
+---
 
 ### `0x4E NEXTB`
 
 Operands: -
 Pop/Push: 0/0
 
-Advance to the next 256-byte code block. Any further instructions in the current
-block are skipped.
+Advance the instruction pointer to the next 256-byte code block. Any bytes
+remaining in the current block between the `NEXTB` instruction and the end of
+the block are skipped. See §5.2 for the code-block structure and block-boundary
+rules.
+
+---
 
 ### `0x4F PUSH7`
 
@@ -1474,111 +2903,200 @@ Pop/Push: 0/1
 
 Push constant `7`.
 
+---
+
 ### `0x50 PRINTV`
 
 Operands: -
 Pop/Push: 3/0
 
-Print bytes from a VM vector or address range. (???)
+Print bytes from a vector payload to the display. `$3` is the source vector
+handle, `$2` is the number of bytes to print, and `$1` is the byte offset into
+the payload. An initial length word is skipped: byte offset `$1 = 0` addresses
+the first byte after the length word.
+
+> **Provisional:** The above operand roles have been identified from
+> reverse-engineering but have not been fully confirmed against MME. The
+> relationship between `PRINTV` and `PRCHAR` display semantics (character set,
+> cursor movement) has not been confirmed.
+
+---
 
 ### `0x51 LOADVB2`
 
 Operands: -
 Pop/Push: 2/1
 
-load a raw byte from handle `$2` using alternate 1-based byte index `$1`.
+Load a byte from handle `$2` using 1-based byte index `$1` measured from the
+start of the aggregate, with no length-word skip. Byte index `1` addresses the
+first byte of the aggregate (i.e., the first byte of the length word in a
+string-layout aggregate).
+
+> **Note:** This instruction's indexing convention differs from `VLOADB`, which
+> always skips the initial length word. Use `LOADVB2` when direct access to the
+> length word or other header bytes is required.
+
+---
 
 ### `0x52 PUTVB2`
 
 Operands: -
 Pop/Push: 3/0
 
-store the low byte of `$1` into handle `$3` using the alternate 1-based byte index `$2`.
+Store the low byte of `$1` into handle `$3` using 1-based byte index `$2`
+measured from the start of the aggregate, with no length-word skip. Byte index
+`1` addresses the first byte of the aggregate.
+
+> **Note:** This instruction's indexing convention differs from `VPUTB`, which
+> always skips the initial length word.
+
+---
 
 ### `0x53 REST`
 
 Operands: -
 Pop/Push: 2/1
 
-Identical to `ADD`: push `$2 + $1`.
+Push `$2 + $1`.
+
+> **Note:** This instruction is guaranteed by the VM specification to be
+> semantically identical to `ADD` (`0x01`). It is documented separately because
+> it occupies a distinct opcode position.
+
+---
 
 ### `0x54 INCLV`
 
 Operands: B
 Pop/Push: 0/0
 
-Increment the local variable `$B`. The value before incrementing must not be
-FALSE (`0x8001`).
+Increment local variable `$B` in place, without pushing a result.
+
+The value of local `$B` before incrementing must not be **FALSE** (`0x8001`).
+See §1.5.1 for the role of **FALSE** as a sentinel; using `INCLV` on an
+uninitialized or FALSE-valued local results in undefined behavior.
+
+---
 
 ### `0x55 RET`
 
 Operands: -
 Pop/Push: 0/0
 
-Return to the caller without pushing a result.
+Return to the caller without producing a result. See §6.6.
+
+---
 
 ### `0x56 PUTL`
 
 Operands: B
 Pop/Push: 1/0
 
-Store the top stack word into local `$B`.
+Pop `$1` from the evaluation stack and store it into local variable `$B`.
+
+---
 
 ### `0x57 PUSHL`
 
 Operands: B
 Pop/Push: 0/1
 
-Push the value of local `$B`.
+Push the current value of local variable `$B`.
+
+---
 
 ### `0x58 STOREL`
 
 Operands: B
 Pop/Push: 0/0
 
-Copy the top stack word into local `$B` while preserving it on the stack.
+Copy the top word of the evaluation stack into local variable `$B`, leaving the
+stack unchanged.
+
+---
 
 ### `0x59 BITSVL`
 
 Operands: W
 Pop/Push: 0/1
 
-Extract a bitfield from a vector word using an inline control word and a vector handle held in a local. (???)
+Extract a bitfield from a word within a vector, using an inline control word
+`$W` and a vector handle held in a local variable.
+
+> **Provisional:** The encoding of the inline control word `$W`, the local
+> variable index it identifies, and the exact bit-extraction semantics have not
+> been confirmed against MME.
+
+---
 
 ### `0x5A BITSV`
 
 Operands: W
 Pop/Push: 1/1
 
-Extract a bitfield from a vector word using an inline control word and a vector handle from the stack. (???)
+Extract a bitfield from a word within a vector, using an inline control word
+`$W` and a vector handle popped from the evaluation stack.
+
+> **Provisional:** The encoding of the inline control word `$W` and the exact
+> bit-extraction semantics have not been confirmed against MME.
+
+---
 
 ### `0x5B BBSETVL`
 
 Operands: W
 Pop/Push: 1/0
 
-Replace a multi-bit field inside a vector word using a local-held vector handle. (???)
+Replace a multi-bit field within a word in a vector, using an inline control
+word `$W` and a vector handle held in a local variable. `$1` provides the new
+field value.
+
+> **Provisional:** The encoding of the inline control word `$W`, the local
+> variable index it identifies, and the exact field-replacement semantics have
+> not been confirmed against MME.
+
+---
 
 ### `0x5C BBSETV`
 
 Operands: W
 Pop/Push: 2/0
 
-Replace a multi-bit field inside a vector word using a stack-held vector handle. (???)
+Replace a multi-bit field within a word in a vector, using an inline control
+word `$W` and a vector handle popped from the evaluation stack. `$1` provides
+the new field value and `$2` provides the vector handle.
+
+> **Provisional:** The encoding of the inline control word `$W` and the exact
+> field-replacement semantics have not been confirmed against MME.
+
+---
 
 ### `0x5D BSETVL`
 
 Operands: W
 Pop/Push: 0/0
 
-Set or clear one bit in a vector word using a local-held vector handle. (???)
+Set or clear one bit within a word in a vector, using an inline control word
+`$W` and a vector handle held in a local variable.
+
+> **Provisional:** The encoding of the inline control word `$W`, the local
+> variable index it identifies, and which stack operand (if any) supplies the
+> bit value have not been confirmed against MME.
+
+---
 
 ### `0x5E BSETV`
 
 Operands: W
 Pop/Push: 1/0
 
-Set or clear one bit in a vector word using a stack-held vector handle. (???)
+Set or clear one bit within a word in a vector, using an inline control word
+`$W` and a vector handle popped from the evaluation stack.
+
+> **Provisional:** The encoding of the inline control word `$W` and the exact
+> bit-set semantics have not been confirmed against MME.
+
+---
 
 ### `0x5F 0x01 XOR`
 
@@ -1587,6 +3105,8 @@ Pop/Push: 2/1
 
 Bitwise XOR: push `$2 ^ $1`.
 
+---
+
 ### `0x5F 0x02 NOT`
 
 Operands: -
@@ -1594,561 +3114,871 @@ Pop/Push: 1/1
 
 Bitwise NOT: push `~$1`.
 
+---
+
 ### `0x5F 0x03 ROTATE`
 
 Operands: -
 Pop/Push: 2/1
 
-Rotate `$2` by `$1` bit positions to the right, or to the left if `$1` is negative. The rotated bits appear in the same order at the other end of the word.
+Rotate `$2` right by `$1` bit positions; rotate left if `$1` is negative. Bits
+shifted out at one end reappear at the other end in the same order.
+
+---
 
 ### `0x5F 0x04 VFIND`
 
 Operands: -
 Pop/Push: 3/1
 
-Vector search operation returning an index or **FALSE**. (???)
+Search a vector for a specific word value. `$1` is the number of words to
+search, `$2` is the vector handle, and `$3` is the word value to find. Push
+the index of the first matching word, or **FALSE** if no match is found.
+
+> **Provisional:** The index returned is believed to be 1-based, but whether
+> an initial length word is skipped when computing the search region and the
+> returned index has not been confirmed against MME.
+
+---
 
 ### `0x5F 0x05 STRCHR`
 
 Operands: -
 Pop/Push: 2/1
 
-Search VM string handle `$1` for a byte matching the low byte of `$2`, and push the found index or **FALSE** if not found.
+Search string handle `$1` for a byte matching the low byte of `$2`. Push the
+1-based byte index of the first matching byte within the string payload, or
+**FALSE** if no match is found. See §4.6 for the string layout.
+
+---
 
 ### `0x5F 0x06 PUTG`
 
 Operands: B
 Pop/Push: 1/0
 
-Store the top stack word into global variable `$B`.
+Store `$1` into program global `$B`. See §7.3.
+
+---
 
 ### `0x5F 0x07 POPN`
 
 Operands: -
 Pop/Push: varies/0
 
-Pop `$1` from the stack as a count, then discard that number of additional words from the stack.
+Pop `$1` from the evaluation stack as a count, then discard that many
+additional words from the evaluation stack.
+
+---
+
+### `0x5F 0x08` (reserved)
+
+This extended opcode value is reserved. No behavior is defined for it by this
+edition of the specification. The interpreter's behavior when executing a
+reserved opcode is undefined.
+
+---
 
 ### `0x5F 0x09 LONGJMPR`
 
 Operands: -
 Pop/Push: 2/1
 
-Transfer control to the second address associated with activation token `$2`, pushing `$1` as a result. The state stored in the activation record is restored, and the token is invalidated.
+Transfer control to the second procedure offset recorded in the activation
+record associated with activation token `$2`, and push `$1` as a return value.
+The state stored in the activation record is restored and the token is
+invalidated. See §6.7.
+
+---
 
 ### `0x5F 0x0A LONGJMP`
 
 Operands: -
 Pop/Push: 1/0
 
-Transfer control to the first address associated with activation token `$1` without pushing a result. The state stored in the activation record is restored, and the token is invalidated.
+Transfer control to the first procedure offset recorded in the activation
+record associated with activation token `$1`, without pushing a result. The
+state stored in the activation record is restored and the token is invalidated.
+See §6.7.
+
+---
 
 ### `0x5F 0x0B SETJMP`
 
 Operands: WW
 Pop/Push: 0/1
 
-Save the current state into an activation record, as described in [section 4.8](#48-non-local-control-transfer), and push the activation token. The two inline word operands are interpreted as code offsets within the current module. The first operand identifies a target for `LONGJMP`; the second identifies a target for `LONGJUMPR`.
+Save the current execution state into an activation record, as described in
+§6.7, and push the activation token. The two inline word operands are
+procedure offsets within the current module. The first procedure offset
+identifies the transfer target for a subsequent `LONGJMP`; the second
+identifies the transfer target for a subsequent `LONGJMPR`.
+
+---
 
 ### `0x5F 0x0C OPEN`
 
 Operands: B
 Pop/Push: 2/1
 
-Open or attach a channel, using the file or device name string `$2`. The inline operand is the mode byte described in [section 8.1.1](#811-open-mode-byte).
+Open or attach a file channel using the string at handle `$2` as the filename.
+The inline byte `$B` is the mode byte; see §8.1.2 for the mode byte encoding
+and filename resolution rules.
 
-The meaning of `$1` is not defined by this specification. (???)
+> **Provisional:** The role of operand `$1` has not been determined. Its value
+> may be ignored, or it may supply a secondary parameter to the open operation.
+
+---
 
 ### `0x5F 0x0D CLOSE`
 
 Operands: -
 Pop/Push: 1/1
 
-Close a channel and push a status result. (???)
+Close the channel `$1` and push a status result.
+
+> **Provisional:** The meaning of the pushed status value has not been
+> confirmed against MME. It is not known whether the status follows the same
+> success/failure convention as `UNLINK` (0 on success, **FALSE** on failure)
+> or uses a different encoding.
+
+---
 
 ### `0x5F 0x0E READ`
 
 Operands: -
 Pop/Push: 3/1
 
-Read `$1` words from channel `$2` into aggregate `$3`, starting at the beginning of the aggregate.
+Read `$1` words from channel `$2` into aggregate `$3`, starting at the
+beginning of the aggregate. Push a status result.
+
+> **Provisional:** The meaning of the pushed status value has not been
+> confirmed against MME.
+
+---
 
 ### `0x5F 0x0F WRITE`
 
 Operands: -
 Pop/Push: 3/1
 
-Write `$1` bytes from aggregate `$3` to channel `$2`, starting at the beginning of the aggregate.
+Write `$1` bytes to channel `$2` from aggregate `$3`. For each byte written,
+the low byte of one word in the aggregate is used and the high byte is
+discarded; `$1` words are consumed from the aggregate to produce `$1` bytes.
+Transfer starts at the beginning of the aggregate. Push a status result.
 
-The aggregate must contain `$1` words; only the low byte of each word is written.
+> **Provisional:** The meaning of the pushed status value has not been
+> confirmed against MME.
+
+---
 
 ### `0x5F 0x10 READREC`
 
 Operands: -
 Pop/Push: 4/1
 
-read `$1` records from channel `$3` starting at record `$2` into the byte payload of vector `$4`.
+Read `$1` I/O records from channel `$3` starting at record index `$2` into the
+payload of vector `$4`. The record size is determined by system variable `0xCC`;
+see §7.5.3 and §8.1.4. Push a status result.
+
+> **Provisional:** The meaning of the pushed status value has not been
+> confirmed against MME.
+
+---
 
 ### `0x5F 0x11 WRITEREC`
 
 Operands: -
 Pop/Push: 4/1
 
-write `$1` records from the byte payload of vector `$4` to channel `$3` starting at record `$2`.
+Write `$1` I/O records from the payload of vector `$4` to channel `$3`
+starting at record index `$2`. The record size is determined by system variable
+`0xCC`; see §7.5.3 and §8.1.4. Push a status result.
+
+> **Provisional:** The meaning of the pushed status value has not been
+> confirmed against MME.
+
+---
 
 ### `0x5F 0x12 DISP`
 
 Operands: B
 Pop/Push: 0/0
 
-Perform the display operation selected by `$B`:
-* 0: Cursor right
-* 1: Cursor left
-* 2: Cursor down
-* 3: Cursor up
-* 4: Erase to end of line
-* 5: Clear from cursor row to bottom
+Perform the display operation selected by `$B`. For the complete list of
+suboperations, see §8.2.4.
+
+---
 
 ### `0x5F 0x13 XDISP`
 
 Operands: B
 Pop/Push: 1/1
 
-Perform the display operation selected by `$B`:
-* 0: Scroll area down by `$1` lines. The area starts at the cursor row and ends at the row in system variable `0xC4`.
-* 1: Scroll area up by `$1` lines. The area starts at the cursor row and ends at the row in system variable `0xC4`.
-* 2/3: No effect.
-* 4: Scroll area down by `$1` lines. The area starts at the row in system variable `0xC5` and ends at the row in system variable `0xC4`.
-* 5: Scroll area up by `$1` lines. The area starts at the row in system variable `0xC5` and ends at the row in system variable `0xC4`.
-* 6: Draw a horizontal line `$1` characters wide, starting at the cursor.
+Perform the area-relative display operation selected by `$B`, using `$1` as a
+line count. For the complete list of suboperations and the system variables
+that govern the scroll region boundaries, see §8.2.5. The line count `$1` is
+pushed back onto the evaluation stack after the operation.
 
-`$1` is then pushed back onto the stack.
+---
 
 ### `0x5F 0x14 FSIZE`
 
 Operands: -
 Pop/Push: 1/1
 
-Push the size of the file indicated by open channel `$1`, divided by 256.
+Push the size of the file accessed through open channel `$1`, expressed as the
+number of 256-byte blocks (i.e., the file size divided by 256, rounded down).
+
+---
 
 ### `0x5F 0x15 UNLINK`
 
 Operands: -
 Pop/Push: 1/1
 
-Delete the file whose name is the string `$1` and close any open channels to it.
+Delete the file whose name is the string at handle `$1`, and close any open
+channels to that file. Push `0` on success or **FALSE** on failure.
 
-Push `0` on success or `0x8001` on failure.
+---
 
 ### `0x5F 0x16 POPRET`
 
 Operands: -
 Pop/Push: varies/0
 
-Discard a number of words from the stack equal to the number of words returned by the most recent `RETURN`, `RFALSE`, `RZERO`, `RET`, or `RETN` instruction.
+Discard from the evaluation stack a number of words equal to the return-value
+count of the most recently executed `RETURN`, `RFALSE`, `RZERO`, `RET`, or
+`RETN` instruction.
+
+---
 
 ### `0x5F 0x17 KBINPUT`
 
 Operands: -
 Pop/Push: 0/1
 
-Poll the keyboard for input, and push a key code if a key is available, or `0x8001` if no key is available.
+Poll the keyboard for input and push a key code if a key is ready, or
+**FALSE** if no key is available.
 
-If the value of system variable `0xC0` is nonzero, key input is ignored, and this instruction will always push `0x8001`.
+If system variable `0xC0` is nonzero, the instruction returns **FALSE**
+immediately without polling the keyboard; see §7.5.2.
 
-When a special key is pressed, it is exposed to the bytecode program as two key codes that must be read with two separate calls to `KBINPUT`, as described in [section 8.3](#83-keyboard-polling).
+When a special key produces an extended key code, it is exposed as two
+consecutive key codes that must be read with two separate `KBINPUT` calls;
+see §8.3.2 for the extended-key encoding.
+
+---
 
 ### `0x5F 0x18 FADD`
 
 Operands: -
 Pop/Push: 3/1
 
-Floating-point addition: write `real($3) + real($2)` into `real($1)`, then push `$1`.
+Floating-point addition: write `real($3) + real($2)` into `real($1)`, then
+push `$1`. See §4.7 for the floating-point representation.
+
+---
 
 ### `0x5F 0x19 FSUB`
 
 Operands: -
 Pop/Push: 3/1
 
-Floating-point subtraction: write `real($3) - real($2)` into `real($1)`, then push `$1`.
+Floating-point subtraction: write `real($3) - real($2)` into `real($1)`, then
+push `$1`. See §4.7.
+
+---
 
 ### `0x5F 0x1A FMUL`
 
 Operands: -
 Pop/Push: 3/1
 
-Floating-point multiplication: write `real($3) * real($2)` into `real($1)`, then push `$1`.
+Floating-point multiplication: write `real($3) * real($2)` into `real($1)`,
+then push `$1`. See §4.7.
+
+---
 
 ### `0x5F 0x1B FDIV`
 
 Operands: -
 Pop/Push: 3/1
 
-Floating-point division: write `real($3) / real($2)` into `real($1)`, then push `$1`.
+Floating-point division: write `real($3) / real($2)` into `real($1)`, then
+push `$1`. See §4.7.
+
+---
 
 ### `0x5F 0x1C TPOP`
 
 Operands: -
 Pop/Push: 1/0
 
-Discard `$1` words from the tuple stack, by incrementing the internal tuple-stack pointer.
+Discard `$1` words from the tuple stack by advancing the internal tuple-stack
+pointer. See §4.4 for the tuple allocator model.
+
+---
 
 ### `0x5F 0x1D FLOG`
 
 Operands: -
 Pop/Push: 2/1
 
-Floating-point natural logarithm: write `ln(real($2))` into `real($1)`, then push `$1`.
+Floating-point natural logarithm: write `ln(real($2))` into `real($1)`, then
+push `$1`. See §4.7.
+
+---
 
 ### `0x5F 0x1E FEXP`
 
 Operands: -
 Pop/Push: 2/1
 
-Floating-point exponential: write $1+2$ `e^real($2)` into `real($1)`, then push `$1`.
+Floating-point exponential: write `e^real($2)` into `real($1)`, then push
+`$1`. See §4.7.
+
+---
 
 ### `0x5F 0x1F STRICMP`
 
 Operands: -
 Pop/Push: 5/1
 
-compare first string slice `($4, $2, $1)` against second string `($5, 0, $3)` case-insensitively without skipping spaces; return `+1`, `0`, or `-1` with the VM's inverted sign convention.
+Compare the string slice (`$4`, `$2`, `$1`) case-insensitively against the
+string (`$5`, `0`, `$3`) without skipping spaces, and push the signed
+comparison result; see §1.5.2.
+
+The three-element slice notation is (handle, starting-byte-offset,
+byte-count). The second operand uses a starting offset of `0` and the entire
+string defined by `$3` bytes.
+
+---
 
 ### `0x5F 0x20 STRICMP1`
 
 Operands: -
 Pop/Push: 5/1
 
-perform `STRICMP`, but use first string handle `$4 - 1` instead of `$4`.
+Identical to `STRICMP`, except that the first string handle used is `$4 - 1`
+rather than `$4`. Push the signed comparison result; see §1.5.2.
+
+---
 
 ### `0x5F 0x21 WPRINTV`
 
 Operands: -
 Pop/Push: 4/1
 
-clipped window print with `$4 = D`, `$3 = S`, `$2 = N`, and `$1 = O`.
+Print a clipped substring of a source string into a window. `$4` is the window
+descriptor handle `D`, `$3` is the source string handle `S`, `$2` is the
+maximum character count `N`, and `$1` is the starting character offset `O`
+within the string.
+
+Push the number of characters actually printed, or **FALSE** if the window has
+zero visible width. The full algorithm, including bound computation, clipping,
+and the `SETWIN` call it performs implicitly, is defined in §8.4.4.
+
+---
 
 ### `0x5F 0x22 SETWIN`
 
 Operands: -
 Pop/Push: 1/1
 
-activate the display window described by descriptor handle `$1`.
+Activate the window described by the window descriptor at handle `$1`.
+Initialise the cursor and display attributes from the descriptor vector, commit
+the cursor position via system variables `0xCA` and `0xC9`, and mirror the text
+attribute into system variable `0xD5`. Push `$1`. The full activation
+algorithm is defined in §8.4.3.
+
+---
 
 ### `0x5F 0x23 KEYCMP`
 
 Operands: -
 Pop/Push: 2/1
 
-Compare the structured sort keys at `$2` and `$1`, and push `1` if the former is greater than or equal to the latter, or `0` otherwise.
+Compare the structured sort keys at handles `$2` and `$1`. Push `1` if `$2`
+is greater than or equal to `$1`, or `0` otherwise.
 
-The structure of the sort keys is:
+The comparison walks a series of field sequences in each key; see §8.4.4 (or
+the full key structure definition below) for the field layout.
+
+The key structure is:
 - One tiebreaker byte `C`,
-- One byte giving a total number of bytes `N`,
-- Two tiebreaker bytes `B` and `A`, and finally
-- `N` bytes containing a series of fields.
+- One byte giving a total byte count `N`,
+- Two tiebreaker bytes `B` and `A`, and
+- `N` bytes containing a sequence of length-prefixed fields.
 
-Each field consists of a length byte `L` followed by `L` bytes of data.
+Each field is a length byte `L` followed by `L` bytes of data.
 
-The key comparison process is:
-1. Starting with the first field in each key, compare each byte of the field. If any byte differs, treat the key with the lower byte as smaller and stop.
-2. If all bytes match but one key's field is shorter than the other's, treat the shorter one as smaller and stop.
-3. If all bytes match and the fields are the same length, and both keys have more fields remaining, move on to the next field and repeat from step 2.
-4. If one key runs out of fields before the other, treat that one as smaller and stop.
-5. Examine bit 6 of tiebreaker byte `C` in the first key. If the bit is clear, treat the keys as equal and stop.
-6. Calculate a first tiebreaker value `((A & 0x3F) << 8) + B` from the `A` and `B` tiebreaker bytes of each key. If the values differ, treat the key with the lower value as smaller and stop.
-7. Calculate a second tiebreaker value `C & 0x3F` from the `C` tiebreaker bytes of each key. If the values differ, treat the key with the lower value as smaller and stop.
-8. If everything matches, treat the first key as greater and stop.
+The comparison process is:
+1. Compare corresponding bytes of the first field in each key. If any byte
+   differs, the key with the lower byte is smaller; stop.
+2. If all bytes match but one field is shorter, the shorter field is smaller;
+   stop.
+3. If all bytes and lengths match and both keys have more fields, advance to
+   the next field and repeat from step 1.
+4. If one key exhausts its fields first, that key is smaller; stop.
+5. If bit 6 of `C` in the first key is clear, treat the keys as equal; stop.
+6. Compute tiebreaker value `((A & 0x3F) << 8) + B` for each key. If they
+   differ, the key with the lower value is smaller; stop.
+7. Compute tiebreaker value `C & 0x3F` for each key. If they differ, the key
+   with the lower value is smaller; stop.
+8. Treat the first key as greater; stop.
+
+> **Note:** `KEYCMP` uses a binary result (`1` for greater-or-equal, `0` for
+> less-than), not the ternary signed comparison result used by `STRICMP`,
+> `MEMCMP`, and `MEMCMPO`. The polarity is also opposite: `KEYCMP` returns
+> `1` when the first operand is *not* smaller, while the signed comparison
+> result returns `+1` when the first operand *is* smaller. Do not confuse
+> these conventions.
+
+---
 
 ### `0x5F 0x24 MEMCMP`
 
 Operands: -
 Pop/Push: 3/1
 
-Compare `$1` bytes of aggregate `$2` against aggregate `$3` and push the result.
+Compare `$1` bytes of aggregate `$2` against aggregate `$3` and push the
+signed comparison result; see §1.5.2.
 
-The result is `1` if `$1` is *smaller* than `$2`, and `-1` if `$1` is *greater*; this is the opposite of C `memcmp`.
+> **Note:** The sign convention used by this instruction is the opposite of the
+> C library function `memcmp`: the result is `+1` when the first operand
+> (`$2`) is *smaller*, and `−1` when it is *greater*.
+
+---
 
 ### `0x5F 0x25 MEMCMPO`
 
 Operands: -
 Pop/Push: 4/1
 
-Compare `$2` bytes of aggregate `$3`, starting at byte offset `$1`, against aggregate `$4`, starting at byte offset 2, and push the result.
+Compare `$2` bytes of aggregate `$3`, starting at byte offset `$1`, against
+aggregate `$4`, starting at byte offset `2`, and push the signed comparison
+result; see §1.5.2.
 
-The result is `1` if `$1` is *smaller* than `$2`, and `-1` if `$1` is *greater*; this is the opposite of C `memcmp`.
+> **Note:** The sign convention is the opposite of C `memcmp`: the result is
+> `+1` when the first operand (`$3`) is *smaller*, and `−1` when it is
+> *greater*.
+
+---
 
 ### `0x5F 0x26 ADVANCE`
 
 Operands: -
 Pop/Push: 2/1
 
-Read the lengths of two fields from the aggregate `$2` starting at 1-based byte index `$1`, skip over those two fields, and push the resulting 1-based index.
+Read the lengths of two consecutive length-prefixed fields from aggregate `$2`
+starting at 1-based byte index `$1`, skip past both fields, and push the
+resulting 1-based byte index immediately after the second field.
 
-The aggregate is expected to contain the following at index `$1`:
-* A length byte `N`,
-* `N` bytes of data,
-* Another length byte `M`, and
-* `M` bytes of data.
+The aggregate is expected to contain, starting at index `$1`:
+- A length byte `N`, followed by `N` bytes of data,
+- A length byte `M`, followed by `M` bytes of data.
 
-The index returned is `$1 + N + M + 2`.
+The returned index is `$1 + N + M + 2`.
+
+---
 
 ### `0x5F 0x27 DECMG`
 
 Operands: B
 Pop/Push: 0/1
 
-Decrement module-level global variable `$B` and push the new value.
+Decrement module global `$B` and push the new value. See §7.4.
+
+---
 
 ### `0x5F 0x28 DECG`
 
 Operands: B
 Pop/Push: 0/1
 
-Decrement global variable `$B` and push the new value.
+Decrement program global `$B` and push the new value. See §7.3.
+
+---
 
 ### `0x5F 0x29 POPI`
 
 Operands: B
 Pop/Push: varies/0
 
-Discard `$B` words from the stack.
+Discard `$B` words from the evaluation stack, where `$B` is the inline byte.
+
+---
 
 ### `0x5F 0x2A INCG`
 
 Operands: B
 Pop/Push: 0/1
 
-Increment global variable `$B` and push the new value.
+Increment program global `$B` and push the new value. See §7.3.
+
+---
 
 ### `0x5F 0x2B INCMG`
 
 Operands: B
 Pop/Push: 0/1
 
-increment module-level global variable `$B` and push the new value.
+Increment module global `$B` and push the new value. See §7.4.
+
+---
 
 ### `0x5F 0x2C STOREMG`
 
 Operands: B
 Pop/Push: 1/1
 
-Store the word at the top of the stack into module-level global variable `$B`, leaving it on top of the stack.
+Copy the top word of the evaluation stack into module global `$B`, leaving
+the stack unchanged. See §7.4.
+
+---
 
 ### `0x5F 0x2D STOREG`
 
 Operands: B
 Pop/Push: 1/1
 
-Store the word at the top of the stack into global variable `$B`, leaving it on top of stack.
+Copy the top word of the evaluation stack into program global `$B`, leaving
+the stack unchanged. See §7.3.
+
+---
 
 ### `0x5F 0x2E RETN`
 
 Operands: B
 Pop/Push: varies/varies
 
-Return from the current procedure, passing `$B` words from the stack back to the caller as a return value. The words are kept in the same order.
+Return from the current procedure, passing `$B` words from the evaluation stack
+to the caller as a multi-word return value. The words are transferred in their
+current stack order: the word that was topmost on the evaluation stack when
+`RETN` executes is the topmost word of the return value as presented to the
+caller. See §6.6.
+
+---
 
 ### `0x5F 0x2F PRCHAR`
 
 Operands: -
 Pop/Push: 1/0
 
-Print the character `$1` from code page 437 at the current cursor position, then move the cursor one space to the right. If the cursor is already at the right edge of the screen, it stays there.
+Print the character `$1` from code page 437 at the current cursor position,
+then advance the cursor one position to the right. If the cursor is already at
+the right edge of the screen, it remains there.
 
-`$1` must be between `0` and `255`.
+`$1` must be in the range `0–255`.
+
+---
 
 ### `0x5F 0x30 UNPACK`
 
 Operands: -
 Pop/Push: 4/1
 
-Unpack up to `$2` words of 5-bit symbols from aggregate `$4` into bytes in aggregate `$3`, starting at destination byte offset `$1`, and push either `0x8001` or the offset of the byte following the last destination byte.
+Unpack up to `$2` words of 5-bit symbols from aggregate `$4` into bytes in
+aggregate `$3`, starting at destination byte offset `$1`, and push either
+**FALSE** or the byte offset immediately following the last destination byte.
 
-Each source word `W` is expanded into three destination bytes: `(W >> 10) & 0x1F`, `(W >> 5) & 0x1F`, and `W & 0x1F`. Bit 15 of the source word is treated as a stop bit. If the stop bit is reached while unpacking, bit 7 is set on the final byte and `0x8001` is pushed. If no stop bit appears in the `$2` words, bit 7 is not set, and `$1 + (3 * $2)` is pushed.
+Each source word `W` is expanded into three destination bytes:
+`(W >> 10) & 0x1F`, `(W >> 5) & 0x1F`, and `W & 0x1F`. Bit 15 of the source
+word is a stop bit. If the stop bit is encountered, bit 7 is set on the final
+destination byte and **FALSE** is pushed. If `$2` words are consumed without
+encountering a stop bit, bit 7 is not set and `$1 + (3 * $2)` is pushed.
 
-This operation is reminiscent of the first step of decoding packed Z-machine text, but the interpreter doesn't perform any further translation; the unpacked values are simply zero-extended into bytes.
+---
+
+### `0x5F 0x31 PINM`
+
+Operands: (not confirmed)
+Pop/Push: (not confirmed)
+
+> **Provisional:** The mnemonic `PINM` has been identified for this extended
+> opcode, but the operands, stack effect, and semantics have not been confirmed
+> against MME.
+
+---
+
+### `0x5F 0x32 UNPINM`
+
+Operands: (not confirmed)
+Pop/Push: (not confirmed)
+
+> **Provisional:** The mnemonic `UNPINM` has been identified for this extended
+> opcode, but the operands, stack effect, and semantics have not been confirmed
+> against MME.
+
+---
+
+### `0x5F 0x33` (reserved)
+
+This extended opcode value is reserved. No behavior is defined for it by this
+edition of the specification. The interpreter's behavior when executing a
+reserved opcode is undefined.
+
+---
 
 ### `0x5F 0x34 FMTREAL`
 
 Operands: -
 Pop/Push: 4/1
 
-Format the floating-point number in aggregate `$4` as a string into aggregate `$3`, using `$2` as precision and `$1` as flags.
+Format the floating-point number in aggregate `$4` as a decimal string into
+aggregate `$3`, using `$2` as the precision specifier and `$1` as format flags.
+Push `$3`. See §4.7 for the floating-point representation.
 
-If `$2` is not FALSE (`0x8001`), the number is formatted as fixed-point with exactly `$2` digits after the decimal point. No leading zero is included.
+If `$2` is not **FALSE**, the number is formatted as fixed-point with exactly
+`$2` digits after the decimal point, with no leading zero before the decimal
+point.
 
-Otherwise, if bit 3 (`0x08`) of `$1` is set, the number is rounded to an integer. If bit 3 is clear, the number may be formatted as either an integer, a floating-point number with up to 15 digits after the potential decimal point, or a number in scientific notation with up to 15 significant digits, depending on its value.
+Otherwise, if bit 3 (`0x08`) of `$1` is set, the number is rounded to an
+integer. If bit 3 is clear, the number may be formatted as an integer, a
+floating-point number with up to 15 digits after the decimal, or a
+scientific-notation form with up to 15 significant digits, depending on its
+value.
+
+---
 
 ### `0x5F 0x35 PRSREAL`
 
 Operands: -
 Pop/Push: 6/1
 
-Parse a floating-point number from a string into an 8-byte real buffer, and push the destination address or FALSE.
+Parse a floating-point number from a source string into an 8-byte real buffer
+and push the destination buffer handle or **FALSE**. See §4.7 for the
+floating-point representation.
 
 `$6` is the source text aggregate, `$5` is the destination 8-byte real buffer,
-`$4` is the source byte count, `$3` is a source offset, `$2` is an option word,
-and `$1` is the address of a result word.
+`$4` is the source byte count, `$3` is the source byte offset, `$2` is an
+option word, and `$1` is the address of a two-byte result word.
 
-`PRSREAL` accepts the same numeric forms described in the Cornerstone manual: plain integers, fixed-point decimals, `$`-prefixed amounts, numbers containing comma group separators, scientific notation using `E` or `e`, a leading minus sign, and accounting-style negatives written in parentheses. Examples include `123`, `123.45`, `.99`, `$99.95`, `1,000`, `2.99e5`, `-16.5`, and `(9.95)`.
+`PRSREAL` accepts: plain integers, fixed-point decimals, `$`-prefixed amounts,
+numbers with comma group separators, scientific notation using `E` or `e`, a
+leading minus sign, and accounting-style negatives in parentheses. Examples:
+`123`, `123.45`, `.99`, `$99.95`, `1,000`, `2.99e5`, `-16.5`, `(9.95)`.
 
-The parser stops after it finds a numeric prefix. Strings like `10%` produce a valid numeric prefix (`10`) plus trailing junk; callers may detect that case by comparing the consumed count with the supplied source length.
+Parsing stops at the end of a valid numeric prefix; trailing non-numeric
+characters do not cause failure. Callers may detect trailing junk by comparing
+the consumed count written into the result word against the supplied source
+length.
 
-On success, `PRSREAL` writes the parsed real value into `real($5)`, writes the number
-of consumed source characters into result byte `$1[0]`, writes a status byte
-into result byte `$1[1]`, and pushes `$5`.
+On success: write the parsed value into `real($5)`, write the consumed
+character count into result byte `$1[0]`, write a status code into result byte
+`$1[1]`, and push `$5`.
 
-On failure, it still writes the consumed count into result byte `$1[0]`, writes
-an error/status code into result byte `$1[1]`, and pushes `FALSE`.
+On failure: write the consumed count into result byte `$1[0]`, write an
+error/status code into result byte `$1[1]`, and push **FALSE**.
 
-The error/status codes include:
+Status codes:
 
-- `0x01`: normal successful parse.
-- `0x02`: an exponent marker (`E` or `e`) was seen, but no exponent digits followed it.
+- `0x01`: successful parse.
+- `0x02`: an exponent marker (`E` or `e`) was seen but no exponent digits
+  followed it.
 
-Additional error/status codes may exist. Any code other than `0x01` indicates failure.
+Additional status codes may exist. Any code other than `0x01` indicates
+failure.
+
+---
 
 ### `0x5F 0x36 LOOKUP`
 
 Operands: -
 Pop/Push: 1/1
 
-Resolve a packed descriptor key through a two-level descriptor table rooted at system slot `0xD8`.
+Resolve a packed descriptor key through a two-level descriptor table. The
+algorithm is defined in §8.5.2. System variable `0xD8` holds the root of the
+descriptor table; see §7.5.5.
 
-The root object in `0xD8` is a four-word vector. The following words are used:
+The root aggregate at system variable `0xD8` is a four-word vector with the
+following fields:
 
-* `R[0]`: handle of the primary table;
-* `R[2]`: base handle added to successful relative descriptor values;
-* `R[3]`: far-procedure selector for the fallback resolver.
+- Word 0 (`R[0]`): handle of the primary table.
+- Word 1 (`R[1]`): not currently defined by this specification.
+- Word 2 (`R[2]`): base handle added to successful relative descriptor values.
+- Word 3 (`R[3]`): far-procedure selector for the fallback resolver.
 
-`R[1]` is not currently defined by this specification.
+The packed lookup key `$1` is interpreted as:
 
-The packed lookup key is interpreted as follows:
+- Low 7 bits: primary 1-based index `I`.
+- High byte: secondary 1-based index `J`.
 
-* low 7 bits: primary 1-based index `I`;
-* high byte: secondary 1-based index `J`.
-
-A key with either `I = 0` or `J = 0` is invalid.
+A key with `I = 0` or `J = 0` is invalid.
 
 The lookup process is:
 
-1. read the primary table handle `P = R[0]`;
-2. read the secondary table handle `S = P[2 * (I - 1)]`;
-3. if `S` is `0` or **FALSE**, perform a far call to resolver procedure `R[3]`, passing the original packed key as its sole argument;
-4. otherwise read `D = S[J - 1] & 0x3FFF`;
-5. if `D != 0x3FFF`, return `R[2] + D`;
-6. otherwise perform the same fallback far call to `R[3]`.
+1. Read the primary table handle `P = R[0]`.
+2. Read the secondary table handle `S = P[2 * (I - 1)]`.
+3. If `S` is `0` or **FALSE**, perform a far call to resolver procedure `R[3]`
+   with the original packed key as its sole argument; the resolver's return
+   value becomes the result.
+4. Otherwise, read `D = S[J - 1] & 0x3FFF`.
+5. If `D ≠ 0x3FFF`, push `R[2] + D`.
+6. Otherwise, perform the same fallback far call to `R[3]`.
 
-The effect of the fallback path is that `LOOKUP` does not produce an immediate table result. Instead, it delegates resolution to the far-called resolver procedure, whose eventual return value becomes the result observed by the caller.
+> **Note:** The full algorithm, including the fallback-resolver contract, will
+> be the canonical definition in §8.5.2. This entry is retained here for
+> completeness during the transition; once §8.5.2 is finalized, this algorithm
+> description will be condensed to a cross-reference.
+
+---
 
 ### `0x5F 0x37 EXTRACT`
 
 Operands: -
 Pop/Push: 8/1
 
-Extract data from a structure.
-
-`EXTRACT` is a multi-mode descriptor walker and extractor. It interprets the source bytes as one of several closely related packed data layouts and either returns information about the selected item or copies bytes from it into a destination aggregate.
-
-Its effective stack effect is `8 -> 1`.
+Extract data from a structured aggregate using a multi-mode descriptor walker.
+The algorithm is defined in §8.5.3.
 
 The stack inputs are:
 
-* `$8 = B`: base aggregate handle;
-* `$7 = S`: available span, in words;
-* `$6 = D`: destination aggregate handle, or **FALSE** if no destination copy is required;
-* `$5 = A`: auxiliary selector;
-* `$4 = K`: auxiliary selector or starting word offset;
-* `$3 = O`: explicit word offset within the adjusted source, or **FALSE**;
-* `$2 = G`: nonzero-content guard, or **FALSE**;
-* `$1 = M`: mode or component selector.
+- `$8 = B`: base aggregate handle.
+- `$7 = S`: available span in words.
+- `$6 = D`: destination aggregate handle, or **FALSE** if no destination copy
+  is required.
+- `$5 = A`: auxiliary selector.
+- `$4 = K`: auxiliary selector or starting word offset.
+- `$3 = O`: explicit word offset within the adjusted source, or **FALSE**.
+- `$2 = G`: nonzero-content guard, or **FALSE**.
+- `$1 = M`: mode or component selector.
 
-`EXTRACT` uses the following packed structures.
+`EXTRACT` recognizes two primary record layouts:
 
-An **ordinary record** begins with a header word whose low byte is a tag and whose high byte is a component count. The record payload follows immediately after the header word.
+An **ordinary record** has a header word whose low byte is a tag and whose
+high byte is a component count, followed immediately by a payload of
+zero or more **packed fields**. If the component count is zero, the payload
+is a single packed field.
 
-If the component count is zero, the payload is a single packed field. Otherwise, the payload is a sequence of that many packed fields.
+A **packed field** starts with a length byte `L`. If bit 7 of `L` is clear,
+the field contains `L` data bytes following the length byte, and its encoded
+size is `L + 1` bytes rounded up to a whole number of words. If bit 7 is set,
+the field is a fixed-size 8-byte real value occupying 4 words.
 
-A **packed field** begins with a length byte `L`.
+A **typed field** is an alternative interpretation of the same bytes, used
+when ordinary-record decoding is not applicable. A typed field begins with a
+header word whose low byte is a kind and high byte is a component count. If
+the header is zero, the field is empty (one word). If `kind = 0`, the following
+word gives the total length in words and the remaining bytes are a
+variable-sized payload. If `kind > 0`, the field contains `count` fixed-width
+components each `kind` bytes long; total size is `1 + count * ceil(kind / 2)`
+words.
 
-* If bit 7 of `L` is clear, the field contains `L` bytes of data following the length byte, and its encoded size is `L + 1` bytes rounded up to a whole number of words.
-* If bit 7 of `L` is set, the field is a fixed-size 8-byte real value occupying 4 words.
+The extraction process:
 
-When ordinary-record decoding is not usable at the selected position, `EXTRACT` may reinterpret the same bytes as a **typed field**. A typed field begins with a header word whose low byte is a kind and whose high byte is a component count.
+1. Compute an adjusted source position from `B`, `A`, and `K`:
+   - If `K` is not **FALSE**, treat `K` as an initial word offset, then
+     advance past `A` typed fields using the typed-field sizing rules; let the
+     result be effective base `E`.
+   - Otherwise, treat `A` as a raw word offset; `E = B + A`.
+2. Let the remaining span be `S' = S - (E - B)`.
+3. If `O` is not **FALSE**, treat `E + O` as the start of one ordinary record
+   and operate on that record.
+4. Otherwise, if `M` is not **FALSE**, first attempt to decode an ordinary
+   record at `E`; if that fails, decode a typed field at `E`.
+5. Otherwise, if `G` is not **FALSE**, treat the first `G` raw bytes at `E` as
+   the selected span.
+6. Otherwise, treat `E` as starting with a leading packed field.
 
-* If the header word is zero, the field is empty and occupies one word.
-* If `kind = 0`, the following word gives the total field length in words, and the remaining bytes are interpreted as a variable-sized composite payload.
-* If `kind > 0`, the field contains `count` fixed-width components, each exactly `kind` bytes long, so the total field size is `1 + count * ceil(kind / 2)` words.
+Once an item is selected, mode `M` determines the result:
 
-The extraction process is:
+- **FALSE**: operate on the whole selected item.
+- `0` or `0xFFFF`: return the selected item's high-byte count field.
+- `n > 0`: select the `n`th component of the selected item.
 
-1. compute an adjusted source position from `B`, `A`, and `K`:
-    if `K` is not **FALSE**, treat `K` as an initial word offset and advance from there past `A` typed fields, measured using the typed-field sizing rules;
-    otherwise, treat `A` as a raw word offset;
-2. let the resulting position be the effective base `E`, and let the remaining word span be `S' = S - (E - B)`;
-3. if `O` is not **FALSE**, interpret `E + O` as the start of one ordinary record and operate on that record;
-4. otherwise, if `M` is not **FALSE**, first try to interpret `E` as the start of one ordinary record, and if that fails, reinterpret `E` as the start of one typed field;
-5. otherwise, if `G` is not **FALSE**, treat the first `G` raw bytes at `E` as the selected byte span;
-6. otherwise, treat `E` as starting with a leading packed field whose byte count is taken from the low byte of its first word.
+Whole-item behavior:
 
-Once an item has been selected, the mode `M` determines the result:
+- Ordinary record: result is the payload byte length; if `D` is a usable
+  destination of sufficient capacity, only the payload bytes are copied.
+- Typed field: result is the payload byte length; if `D` is large enough, the
+  copy includes the typed-field header word.
+- Raw-byte-span (`G` path): result is exactly `G`; those raw bytes are copied
+  if `D` is large enough.
+- Leading-packed-field path: result is the field byte length; those bytes are
+  copied from the word after the length word.
 
-* mode **FALSE**: operate on the whole selected item;
-* mode `0`: return the selected item's high-byte count field;
-* mode `0xFFFF`: also returns the selected item's high-byte count field;
-* mode `n > 0`: select the `n`th component of the selected item.
+Component-selection behavior:
 
-Whole-item mode behaves as follows:
+- Ordinary record or typed field with `kind = 0`: the `n`th packed subfield.
+- Typed field with `kind > 0`: the `n`th fixed-width component (`kind` bytes).
+- Result is the selected component's byte length; bytes are copied to `D` if
+  `D` is adequate.
 
-1. in ordinary-record mode, the result is the payload length in bytes, and if `D` is a usable destination of sufficient capacity, only the payload bytes are copied there;
-2. in typed-field mode, the result is the payload length in bytes, and if `D` is large enough, the destination copy includes the typed field starting at its header;
-3. in the raw-byte-span path selected by `G`, the result is exactly `G`, and those raw bytes are copied if `D` is large enough;
-4. in the leading-packed-field path, the result is the field length, and that many raw bytes are copied from the word following the length word.
+Guard `G` is applied in the whole-item ordinary-record path, the whole-item
+typed-field path, and typed-field component extraction: if the selected span
+contains no nonzero byte, `EXTRACT` returns **FALSE** instead of copying or
+reporting the length.
 
-Component-selection mode behaves as follows:
+`EXTRACT` returns **FALSE** if: the base handle is invalid; the selected
+structure extends past the available span; the requested component does not
+exist; the leading packed field has length zero; or a guarded selection fails
+the nonzero-byte test.
 
-1. in ordinary-record mode, component `n` means the `n`th packed subfield of the record payload;
-2. in typed-field mode with `kind = 0`, component `n` means the `n`th packed subfield of the composite payload;
-3. in typed-field mode with `kind > 0`, component `n` means the `n`th fixed-width component, whose size is exactly `kind` bytes.
+> **Note:** The full algorithm will be the canonical definition in §8.5.3.
+> This entry is retained here for completeness during the transition; once
+> §8.5.3 is finalized, this algorithm description will be condensed to a
+> cross-reference.
 
-In component-selection mode, the result is the selected component's byte length. If `D` is a usable destination of sufficient capacity, the selected bytes are copied there.
-
-The optional guard `G` is used in the whole-item ordinary-record path, the whole-item typed-field path, and typed-field component extraction. In those cases, if the selected byte span contains no nonzero byte, `EXTRACT` returns **FALSE** instead of copying or reporting the span.
-
-`EXTRACT` returns **FALSE** if the base handle is invalid, if the selected structure would run past the available span, if the requested component does not exist, if the leading packed field has length zero, or if a guarded selection fails the nonzero-byte test.
+---
 
 ### `0x5F 0x38 RENAME`
 
 Operands: -
 Pop/Push: 2/1
 
-rename a file from one string name to another.
+Rename the file whose name is the string at handle `$2` to the name given by
+the string at handle `$1`. Push `0` on success or **FALSE** on failure.
 
-### `0x60-0x9F VREAD_loc_vec`
+---
 
-Operands: -
-Pop/Push: 0/1
-
-compact vector-word read. Bits `0-3` select a local containing the vector handle; bits `4-5` select one of the first four visible words.
-
-### `0xA0-0xBF PUSH_Ln`
+### `0x60–0x9F VREAD_loc_vec`
 
 Operands: -
 Pop/Push: 0/1
 
-compact local push for locals `0..31`.
+Packed vector-word read. The opcode byte itself encodes both the local variable
+index and the visible-index position to read:
 
-### `0xC0-0xDF PUT_Ln`
+- Bits 3–0 select the local variable (0–15) whose value is the aggregate
+  handle.
+- Bits 5–4 select one of the first four visible indices (1–4) within the
+  aggregate.
+
+See §5.4.1 for the full bit-layout encoding of this packed opcode family and
+§4.5 for the definition of **visible index**.
+
+---
+
+### `0xA0–0xBF PUSH_Ln`
+
+Operands: -
+Pop/Push: 0/1
+
+Packed local push. The opcode byte encodes a local variable index `n` in bits
+4–0 (range 0–31); push the value of local variable `n`. See §5.4.2.
+
+---
+
+### `0xC0–0xDF PUT_Ln`
 
 Operands: -
 Pop/Push: 1/0
 
-compact local store for locals `0..31`, consuming the top of stack.
+Packed local store. The opcode byte encodes a local variable index `n` in bits
+4–0 (range 0–31); pop the top word of the evaluation stack and store it into
+local variable `n`. See §5.4.3.
 
-### `0xE0-0xFF STORE_Ln`
+---
+
+### `0xE0–0xFF STORE_Ln`
 
 Operands: -
 Pop/Push: 0/0
 
-compact local store for locals `0..31`, preserving the top of stack.
+Packed local copy. The opcode byte encodes a local variable index `n` in bits
+4–0 (range 0–31); copy the top word of the evaluation stack into local variable
+`n` without consuming it. See §5.4.4.
+
+---
