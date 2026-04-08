@@ -9,7 +9,7 @@
 
 ### 1.1 Purpose
 
-This document is the normative specification for the **Cornerstone VM**, a
+This document is the specification for the **Cornerstone VM**, a
 16-bit bytecode virtual machine. It defines the contract between an interpreter
 and the program it executes.
 
@@ -85,8 +85,8 @@ In this specification:
   described as the "first word".
 
 The following terms are used throughout this specification. Each is defined
-briefly here; entries that span multiple chapters are given complete normative
-definitions at their canonical location, which is noted.
+briefly here; entries that span multiple chapters are given complete definitions
+at their canonical location, which is noted.
 
 - A **word** is a 16-bit little-endian value. All logical addresses and all
   VM storage values are words unless stated otherwise.
@@ -116,20 +116,18 @@ definitions at their canonical location, which is noted.
   procedure offset; see section 6.1.
 - A **procedure selector** is a 16-bit value encoding a far-call target. See
   section 3.2.1 for the compact field layout and section 6.3 for the full
-  normative definition and resolution rules.
+  definition and resolution rules.
 - The **Cornerstone VM**, or **the VM**, is the abstract machine defined by
   this specification.
 - An **interpreter** is any implementation of the VM described in this
   specification.
-- The **program** is the software executing within the VM. Use *program* in
-  normative and behavioural prose.
-- **Bytecode** is the encoded form of the instruction stream and associated
-  data as it exists in the `.MME` and `.OBJ` files. Use *bytecode* when
-  discussing instructions as data rather than as executing code.
+- The **program** is the software executing within the VM.
+- **bytecode** is the encoded form of the instruction stream and associated
+  data as it exists in the `.MME` and `.OBJ` files.
 - **RAM** is the word-addressed memory made available to the program at
   runtime; see section 4.1.
 - A **VM-visible** value or behavior is one that a conforming program can
-  observe or depend on.
+  observe or detect.
 
 ### 1.5 Fundamental Values and Behavioral Conventions
 
@@ -164,9 +162,7 @@ second operand.
 > ranks higher than the second.
 
 The opcodes that return a signed comparison result are identified in Appendix B
-and include `MEMCMP`, `MEMCMPO`, `KEYCMP`, `STRICMP`, and `STRICMP1`. Those
-Appendix B entries cross-reference this section rather than restating the
-convention.
+and include `MEMCMP`, `MEMCMPO`, `STRICMP`, and `STRICMP1`.
 
 ### 1.6 Reference Implementations and Completeness
 
@@ -190,8 +186,7 @@ this specification may define behavior that this version leaves undefined.
 
 This chapter provides a conceptual map of the Cornerstone VM for a reader
 encountering it for the first time. The content here is informative; normative
-requirements are stated in the chapters that follow. Each subsection identifies
-where those normative details live.
+requirements are stated in the chapters that follow.
 
 ### 2.1 Machine Model
 
@@ -229,11 +224,11 @@ To call a procedure in a different module, the caller uses a **far call**, which
 identifies the target by a **procedure selector**. A procedure selector is a
 16-bit value that encodes the target module and the target procedure's position
 in that module's export table (see section 3.2.1 for the binary encoding and
-section 6.3 for the normative call-form rules). For a far call to succeed, the
+section 6.3 for the call-form rules). For a far call to succeed, the
 target procedure must appear in that module's **export table** in the `.MME`
 file.
 
-> **Note:** The normative limits on the number of modules, the number of
+> **Note:** The limits on the number of modules, the number of
 > procedures exported per module, and the maximum code size per module are
 > defined in section 3.1.
 
@@ -303,7 +298,7 @@ reserved header bytes with zero.
 > **Note:** A **procedure selector** is a 16-bit value whose high byte is the
 > 1-based module number and whose low byte is the zero-based index into that
 > module's export table. The entry-point field at `0x10` gives the procedure
-> that the interpreter shall call when the program starts. The full normative
+> that the interpreter shall call when the program starts. The full
 > definition of procedure selector encoding and resolution is in section 6.3.
 
 The initial portion of the header at byte offsets `0x00`–`0x0C` is the
@@ -870,11 +865,6 @@ module by encoding two indices:
 - **high byte**: 1-based module number;
 - **low byte**: zero-based export-table index within that module.
 
-> **Note:** A compact statement of the procedure selector format also appears
-> in section 3.2.1, provided for the benefit of readers parsing the `.MME`
-> image header before reaching this chapter. Section 6.3 is the normative home
-> of this definition; section 3.2.1 cross-references it.
-
 The instruction set defines two call families:
 
 1. **Near calls**: `CALL0`, `CALL1`, `CALL2`, `CALL3`, and `CALL`. A near call
@@ -1102,7 +1092,7 @@ Some system variables are read-only. The effect of writing to a read-only
 system variable is undefined.
 
 Some system variables trigger an immediate effect when written. Where such a
-trigger is normative, this section states it explicitly.
+trigger is required, this section states it explicitly.
 
 Where no system variable is defined for a given index in the range
 `0xC0–0xFF`, the effect of reading or writing that index is undefined.
@@ -1317,13 +1307,13 @@ that slot for a purpose other than its designated statistic.
 
 ## 8. Host Services
 
-This chapter defines the normative interface between the VM and the host
+This chapter defines the interface between the VM and the host
 environment. It covers file and channel I/O, display output, keyboard input,
 the window descriptor system, and the data lookup and extraction system.
 
 System variable semantics — the per-slot definitions for `0xC0`, `0xC4`,
 `0xC5`, `0xC9`, `0xCA`, `0xCC`, `0xD3`, `0xD4`, `0xD5`, `0xD6`, `0xD8`,
-`0xDB`, and related slots — are normatively defined in §7.5. This chapter
+`0xDB`, and related slots — are defined in §7.5. This chapter
 describes how those variables are used in context; it does not restate their
 definitions.
 
