@@ -15,8 +15,7 @@ and the program it executes.
 
 > **Note:** The Cornerstone VM was historically known as the Mu Machine. The
 > original implementation is **MME** (`MME.EXE`), an abbreviation for Mu Machine
-> Emulator. These earlier names appear in contemporaneous materials but are not
-> used in this specification.
+> Emulator.
 
 This specification serves as a reference for:
 
@@ -75,8 +74,7 @@ of this specification for every conforming program.
 In this specification:
 
 - Hexadecimal constants are written in C syntax with uppercase hex digits:
-  `0xAB`, `0x5F`. Do not use assembly-style notation (`0ABh`) or dollar-sign
-  notation (`$AB`).
+  `0xAB`, `0x5F`.
 - **Bold** marks the primary definition of a term or structure.
 - *Italic* marks emphasis.
 - Offsets are in bytes unless otherwise stated.
@@ -606,8 +604,6 @@ advances by one byte.
 > following the length word. Convention C is used by the inline-operand opcode
 > variants (the opcodes whose mnemonics end with an underscore). Appendix B
 > entries for each opcode state which convention the opcode uses.
-
-TODO: Use these convention letters in Appendix A/B
 
 ### 4.6 Strings
 
@@ -1717,7 +1713,7 @@ coordinate mapping.
 
 The two opcodes in this system are `SETWIN` (`0x5F 0x22`) and `WPRINTV`
 (`0x5F 0x21`). Both consume a window descriptor handle and operate on the
-coordinate mapping it encodes. The active descriptor handle is latched in
+coordinate mapping it encodes. The active descriptor handle is stored in
 system variable `0xD3` (see §7.5.5).
 
 #### 8.4.1 Descriptor Vector Layout
@@ -1757,7 +1753,7 @@ one window:
 
 On success, `SETWIN` pushes `D[0]` (the logical column).
 On failure, `SETWIN` pushes **FALSE** and clears the active-descriptor
-latch (`0xD3` is set to **FALSE**).
+system variable (`0xD3` is set to **FALSE**).
 
 `SETWIN` returns **FALSE** immediately if the descriptor handle is **FALSE**
 or zero.
