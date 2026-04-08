@@ -271,6 +271,7 @@ The following capacity limits apply to all conforming image files:
 | Program globals | ≤ 256 (indices 0–255) |
 | Module globals per module | ≤ 192 (indices `0x00`–`0xBF`) |
 | Exported procedures per module | ≤ 255 |
+| Code size per module | ≤ 65,536 bytes (64 KiB) |
 | Initial RAM image size | ≤ 32,768 words (64 KiB) |
 
 The authoritative statement of each limit appears in the subsection that
@@ -479,9 +480,10 @@ The **high vector-heap space** is the lower portion of the high RAM segment,
 beginning at logical address `0x8000`. It is also managed by the vector
 allocator.
 
-The **tuple stack** occupies 512 words at the high end of the high RAM segment,
-at logical addresses `0xFE00–0xFFFF`. The tuple stack grows downward from its
-upper bound toward lower addresses as tuples are allocated.
+The **tuple stack** occupies the uppermost 1/64th of the high RAM segment; if
+a full 64 KiB is available in the high RAM segment, the tuple stack occupies 512
+words at logical addresses `0xFE00–0xFFFF`. The tuple stack grows downward from
+its upper bound toward lower addresses as tuples are allocated.
 
 > **Note:** The low vector-heap space and the high vector-heap space are
 > managed independently. There is no guarantee that they are physically
@@ -604,6 +606,8 @@ advances by one byte.
 > following the length word. Convention C is used by the inline-operand opcode
 > variants (the opcodes whose mnemonics end with an underscore). Appendix B
 > entries for each opcode state which convention the opcode uses.
+
+TODO: Use these convention letters in Appendix A/B
 
 ### 4.6 Strings
 
@@ -759,7 +763,7 @@ any row have no inline operands.
 | One unsigned byte | `PUTG`, `OPEN`, `DISP`, `XDISP`, `DECMG`, `DECG`, `POPI`, `INCG`, `INCMG`, `STOREMG`, `STOREG`, `RETN` |
 | Two module-relative byte offsets | `SETJMP` |
 
-For the semantics of `SETJMP`'s two inline offsets, see section 6.8.
+For the semantics of `SETJMP`'s two inline offsets, see section 6.7.
 
 ### 5.4 Packed One-Byte Families
 
@@ -857,10 +861,10 @@ A procedure may start at any byte offset within a module. Procedure headers
 must not straddle a code-block boundary; see section 5.2 for the code-block
 model and the full boundary constraint.
 
-The length of a procedure is not stated in the image format. A procedure may
-be assumed to end at the offset of the next lower entry in the module's export
-table, or at the end of the module if no higher-offset export exists. Padding
-bytes may be present between successive procedures.
+The length of a procedure is not stated in the image format. An exported
+procedure may be assumed to end at the offset of the next higher entry in the
+module's export table, or at the end of the module if no higher-offset export
+exists. Padding bytes may be present between successive procedures.
 
 ### 6.3 Call Forms and Procedure Selectors
 
@@ -1062,7 +1066,7 @@ record is present in the procedure header is initialized to **FALSE**
 
 The total number of local variables available in a given procedure is
 determined by bits `0–6` of its procedure header (see §6.1) and may range from
-`0` to `63`.
+`0` to `127`.
 
 > **Note:** The protocol by which the caller's arguments are mapped into the
 > callee's local variables, and the role of procedure-header initializer
@@ -1198,10 +1202,7 @@ immediately without inspecting the input buffer. When `0xC0` is zero,
 ##### `0xD4` — Ctrl+Break Flag
 
 System variable `0xD4` reflects the state of the Ctrl+Break key combination.
-
-> **Note:** The precise semantics of `0xD4` — whether it is edge-triggered
-> (set on a key event, cleared by the program) or level-sensitive — are not
-> defined by this edition.
+See §8.3.3.
 
 ##### `0xD6` — Lock Key Status
 
@@ -1246,7 +1247,7 @@ the approximate start of the read-only data region as a single word:
 word = (channel number of the .OBJ file) | (header_word_0x0E << 5)
 ```
 
-where `header_word_0x0E` is the word at offset `0x0E` in the `.OBJ` file
+where `header_word_0x0E` is the word at offset `0x0E` in the `.MME` file
 header, which holds the byte offset of the start of the read-only data region
 divided by 512 (i.e., right-shifted nine bits from the byte offset). The
 channel number occupies the low bits; the start-address component occupies the
@@ -1476,7 +1477,7 @@ follows:
 * If `0xCC` is `0`, the record size is 256 bytes.
 * If `0xCC` is in the range `1–127`, the record size is `0xCC × 2` bytes
   (that is, `0xCC` is a word count).
-* If `0xCC` is in the range `128–255`, it is a direct byte count.
+* If `0xCC` is greater than `127`, it is a direct byte count.
 
 #### 8.1.5 File Management
 
@@ -1572,8 +1573,9 @@ update system variable `0xC9` or `0xCA`.
 #### 8.2.4 Cursor and Screen Control (`DISP`)
 
 `DISP` performs a simple cursor or screen operation selected by its inline byte
-operand. All `DISP` operations act on the current cursor position and do not
-return a value.
+operand. All `DISP` operations act on the current cursor position, update the
+system variables `0xC9` and `0xCA` if they move the cursor, and do not return a
+value.
 
 | `DISP` operand | Operation |
 |---|---|
@@ -1609,6 +1611,9 @@ scrolling it.
 | `4` | Scroll alternate area (from `0xC5`) downward by `$1` lines |
 | `5` | Scroll alternate area (from `0xC5`) upward by `$1` lines |
 | `6` | Draw a horizontal line `$1` characters wide starting at the cursor position |
+
+Although operations `2` and `3` have no effect, they still consume a word from
+the evaluation stack.
 
 > **Note:** Suboperations `2` and `3` are confirmed no-ops. Programs must not
 > rely on any side effects from these suboperations.
@@ -1721,20 +1726,16 @@ A window descriptor `D` is a vector with at least four visible words:
 
 | Visible index | Role |
 |---|---|
-| `D[1]` | Logical column position (word 0 of the aggregate) |
-| `D[2]` | Logical row position |
-| `D[3]` | Attribute flags word; low byte is mirrored into `0xD5` by `SETWIN` |
-| `D[4]` | Handle of the geometry vector `G` |
+| `D[0]` | Logical column position (word 0 of the aggregate) |
+| `D[1]` | Logical row position |
+| `D[2]` | Attribute flags word; low byte is mirrored into `0xD5` by `SETWIN` |
+| `D[3]` | Handle of the geometry vector `G` |
 
 > **Note:** Descriptor visible indexes follow the convention defined in §4.5:
 > index `1` is the first data word of the aggregate, `2` the second, and so on.
-> In the SETWIN and WPRINTV algorithms below, the shorthand `D[0]` and `D[3]`
-> refers to aggregate word indexes 0 and 3 (i.e., visible indexes 1 and 4).
-
-For consistency with the current specification and source code, which use
-zero-based aggregate word indexes, this section uses `D[i]` to mean "the word
-at aggregate word index `i`" (i.e., the word at byte offset `i * 2` from the
-aggregate base).
+> Here, and in the SETWIN and WPRINTV algorithms below, the shorthand `D[0]` and
+> `D[3]` refers to aggregate word indexes 0 and 3 (i.e., visible indexes 1 and
+> 4).
 
 #### 8.4.2 Geometry Vector Layout
 
@@ -1874,12 +1875,6 @@ The lookup process is:
    where `J` is the secondary index extracted from `$1`.
 5. If `D ≠ 0x3FFF`, push `R[2] + D` as the result.
 6. If `D = 0x3FFF`, initiate the same fallback far call to `R[3]`.
-
-> **Note:** The fallback far call does not return to the instruction following
-> `LOOKUP`. Instead, `LOOKUP` arranges for the far call's eventual return to
-> deliver its return value directly to the caller of `LOOKUP`. A synchronous
-> path through the primary table and direct `R[2] + D` addition is distinct
-> from a fallback path that punts to the resolver procedure.
 
 #### 8.5.3 `EXTRACT`
 
@@ -2059,14 +2054,14 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 | 0x11 | [`VALLOC`](#0x11-valloc) | `-` | 1 | 1 | allocate a vector with `$1` total words and push its handle. |
 | 0x12 | [`VALLOCI`](#0x12-valloci) | `-` | varies | 1 | pop `$1 = word count`, then pop that many initializer words and allocate a vector containing them in original push order. |
 | 0x13 | [`VFREE`](#0x13-vfree) | `-` | 2 | 0 | free the vector identified by handle `$2`, using `$1` as the size in words. |
-| 0x14 | [`TALLOC`](#0x14-talloc) | `-` | 1 | 1 | allocate a tuple with `$1` visible words and push its handle. |
+| 0x14 | [`TALLOC`](#0x14-talloc) | `-` | 1 | 1 | allocate a tuple with `$1` total words and push its handle. |
 | 0x15 | [`TALLOCI`](#0x15-talloci) | `-` | varies | 1 | pop `$1 = word count`, then pop that many initializer words and allocate a tuple containing them in original push order. |
 | 0x16 | [`VLOADW`](#0x16-vloadw) | `-` | 2 | 1 | load a word from handle `$2` at 1-based word index `$1`; index 1 addresses the first word of the aggregate (no length-word skip). |
-| 0x17 | [`VLOADB`](#0x17-vloadb) | `-` | 2 | 1 | load a byte from handle `$2` using dynamic 1-based byte index `$1`. |
-| 0x18 | [`VLOADW_`](#0x18-vloadw_) | `B` | 1 | 1 | load a word from handle `$1` using the inline zero-based word offset. |
-| 0x19 | [`VLOADB_`](#0x19-vloadb_) | `B` | 1 | 1 | load a byte from handle `$1` using the inline zero-based byte index. |
+| 0x17 | [`VLOADB`](#0x17-vloadb) | `-` | 2 | 1 | load a byte from handle `$2` using 1-based byte index `$1` skipping a length word. |
+| 0x18 | [`VLOADW_`](#0x18-vloadw_) | `B` | 1 | 1 | load a word from handle `$1` using the inline zero-based word offset (no length-word skip). |
+| 0x19 | [`VLOADB_`](#0x19-vloadb_) | `B` | 1 | 1 | load a byte from handle `$1` using the inline zero-based byte index and skipping a length word. |
 | 0x1A | [`VPUTW`](#0x1a-vputw) | `-` | 3 | 0 | store `$1` into handle `$3` at 1-based word index `$2`; index 1 addresses the first word of the aggregate (no length-word skip). |
-| 0x1B | [`VPUTB`](#0x1b-vputb) | `-` | 3 | 0 | store the low byte of `$1` into handle `$3` at dynamic 1-based byte index `$2`. |
+| 0x1B | [`VPUTB`](#0x1b-vputb) | `-` | 3 | 0 | store the low byte of `$1` into handle `$3` at 1-based byte index `$2`. |
 | 0x1C | [`VPUTW_`](#0x1c-vputw_) | `B` | 2 | 0 | store `$1` into handle `$2` at the inline zero-based word offset. |
 | 0x1D | [`VPUTB_`](#0x1d-vputb_) | `B` | 2 | 0 | store the low byte of `$1` into handle `$2` at the inline zero-based byte index. |
 | 0x1E | [`VECSETW`](#0x1e-vecsetw) | `-` | 3 | 1 | fill handle `$3` with `$2` words of value `$1` and leave that handle on the evaluation stack. |
@@ -2181,9 +2176,9 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 | 0x5F 0x0B | [`SETJMP`](#0x5f-0x0b-setjmp) | `WW` | 0 | 1 | save execution state into an **activation record** and push the **activation token**; the two inline words are procedure offsets encoding the resume targets (see §6.7). |
 | 0x5F 0x0C | [`OPEN`](#0x5f-0x0c-open) | `B` | 2 | 1 | open or attach a logical channel; the inline byte is the mode bitfield (see §8.1.2). |
 | 0x5F 0x0D | [`CLOSE`](#0x5f-0x0d-close) | `-` | 1 | 1 | close a channel and return a status result. |
-| 0x5F 0x0E | [`READ`](#0x5f-0x0e-read) | `-` | 3 | 1 | read `$1` words from channel `$2` into aggregate `$3`, beginning at visible index 1. |
+| 0x5F 0x0E | [`READ`](#0x5f-0x0e-read) | `-` | 3 | 1 | read `$1` words from channel `$2` into aggregate `$3`, beginning at visible index 1 (skipping a length word). |
 | 0x5F 0x0F | [`WRITE`](#0x5f-0x0f-write) | `-` | 3 | 1 | write `$1` bytes to channel `$2`; each byte is the low byte of one word from aggregate `$3` beginning at visible index 1, with the high byte of each word discarded. |
-| 0x5F 0x10 | [`READREC`](#0x5f-0x10-readrec) | `-` | 4 | 1 | read `$1` records from channel `$3` starting at record `$2` into the byte payload of aggregate `$4`. |
+| 0x5F 0x10 | [`READREC`](#0x5f-0x10-readrec) | `-` | 4 | 1 | read `$1` records from channel `$3` starting at record `$2` into the byte payload of aggregate `$4` (skipping a length word). |
 | 0x5F 0x11 | [`WRITEREC`](#0x5f-0x11-writerec) | `-` | 4 | 1 | write `$1` records from the byte payload of aggregate `$4` to channel `$3` starting at record `$2`. |
 | 0x5F 0x12 | [`DISP`](#0x5f-0x12-disp) | `B` | 0 | 0 | display-control suboperation selected by the inline byte (see §8.2.4). |
 | 0x5F 0x13 | [`XDISP`](#0x5f-0x13-xdisp) | `B` | 1 | 1 | extended display-control suboperation selected by the inline byte (see §8.2.5). |
@@ -2279,7 +2274,8 @@ edition of the specification.
 Operands: -
 Pop/Push: 2/1
 
-Integer addition: push `$2 + $1`.
+Integer addition: push `$2 + $1`. The result is truncated to 16 bits; overflow
+and underflow result in wrapping.
 
 ---
 
@@ -2288,7 +2284,8 @@ Integer addition: push `$2 + $1`.
 Operands: -
 Pop/Push: 2/1
 
-Integer subtraction: push `$2 - $1`.
+Integer subtraction: push `$2 - $1`. The result is truncated to 16 bits;
+overflow and underflow result in wrapping.
 
 ---
 
@@ -2297,7 +2294,8 @@ Integer subtraction: push `$2 - $1`.
 Operands: -
 Pop/Push: 2/1
 
-Integer multiplication: push `$2 * $1`.
+Integer multiplication: push `$2 * $1`. The result is truncated to 16 bits;
+overflow and underflow result in wrapping.
 
 ---
 
@@ -2306,7 +2304,7 @@ Integer multiplication: push `$2 * $1`.
 Operands: -
 Pop/Push: 2/1
 
-Integer division: push `$2 / $1`.
+Integer division: push `$2 / $1`. The result of dividing by zero is undefined.
 
 ---
 
@@ -2320,7 +2318,7 @@ Integer modulus: push `$2 mod $1`.
 The result must not be negative. When the dividend or divisor is negative, the
 implementation must add `$1` to any negative intermediate result to produce a
 non-negative value. Implementations that use the host language's `%` operator
-must apply this correction explicitly.
+must apply this correction explicitly if the operator has different semantics.
 
 ---
 
@@ -2472,7 +2470,7 @@ The precise operation of the allocator is implementation-defined; see §4.3.
 Operands: -
 Pop/Push: 1/1
 
-Allocate a tuple with `$1` visible words from the tuple stack and push its
+Allocate a tuple with `$1` total words from the tuple stack and push its
 handle. See §4.4 for the tuple allocator model.
 
 ---
@@ -2494,8 +2492,8 @@ for the tuple allocator model.
 Operands: -
 Pop/Push: 2/1
 
-Load a word from handle `$2` at zero-based word offset `$1` from the start of
-the aggregate. No length-word skip is performed; word offset 0 addresses the
+Load a word from handle `$2` at 1-based word index `$1` from the start of
+the aggregate. No length-word skip is performed; word index 1 addresses the
 first word of the aggregate.
 
 ---
@@ -2505,9 +2503,9 @@ first word of the aggregate.
 Operands: -
 Pop/Push: 2/1
 
-Load a byte from handle `$2` at byte offset `$1 + 2` from the start of the
-aggregate. The `+2` accounts for the initial two-byte length word; a value of
-`$1 = 0` addresses the first byte of the payload. See §4.5 for the aggregate
+Load a byte from handle `$2` at 1-based byte index `$1 + 2` from the start of
+the aggregate. The `+2` accounts for the initial two-byte length word; a value
+of `$1 = 1` addresses the first byte of the payload. See §4.5 for the aggregate
 layout convention.
 
 ---
@@ -2548,10 +2546,10 @@ first word of the aggregate.
 Operands: -
 Pop/Push: 3/0
 
-Store the low byte of `$1` into handle `$3` at byte offset `$2 + 2` from the
-start of the aggregate. The `+2` accounts for the initial two-byte length word;
-a value of `$2 = 0` addresses the first byte of the payload. See §4.5 for the
-aggregate layout convention.
+Store the low byte of `$1` into handle `$3` at 1-based byte index `$2 + 2`
+from the start of the aggregate. The `+2` accounts for the initial two-byte
+length word; a value of `$2 = 1` addresses the first byte of the payload. See
+§4.5 for the aggregate layout convention.
 
 ---
 
@@ -2668,10 +2666,7 @@ Push the inline word value `$W`.
 Operands: B
 Pop/Push: 0/1
 
-Push the inline byte value `$B`.
-
-> **Provisional:** Whether the byte value is zero-extended or sign-extended to
-> a 16-bit word has not been confirmed against MME.
+Push the inline byte value `$B`, zero-extending it to a 16-bit word.
 
 ---
 
@@ -2757,11 +2752,141 @@ Discard the top word of the evaluation stack.
 
 ---
 
-### `0x30–0x3E` (reserved)
+### `0x30 JUMP`
 
-These thirteen base opcode values are reserved. No behavior is defined for
-them by this edition of the specification. The interpreter's behavior when
-executing a reserved opcode is undefined.
+Operands: J
+Pop/Push: 0/0
+
+Unconditional branch. The jump-target operand uses the variable-length encoding
+described in §5.3.2: a nonzero first byte is a signed 8-bit offset relative to
+the first byte of the next instruction; a zero first byte is followed by a
+little-endian word giving the absolute module-relative target offset.
+
+---
+
+### `0x31 JUMPZ`
+
+Operands: J
+Pop/Push: 1/0
+
+Branch if `$1 == 0`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x32 JUMPNZ`
+
+Operands: J
+Pop/Push: 1/0
+
+Branch if `$1 != 0`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x33 JUMPF`
+
+Operands: J
+Pop/Push: 1/0
+
+Branch if `$1 == FALSE` (`0x8001`). See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x34 JUMPNF`
+
+Operands: J
+Pop/Push: 1/0
+
+Branch if `$1 != FALSE` (`0x8001`). See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x35 JUMPGZ`
+
+Operands: J
+Pop/Push: 1/0
+
+Branch if `$1 > 0`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x36 JUMPLEZ`
+
+Operands: J
+Pop/Push: 1/0
+
+Branch if `$1 <= 0`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x37 JUMPLZ`
+
+Operands: J
+Pop/Push: 1/0
+
+Branch if `$1 < 0`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x38 JUMPGEZ`
+
+Operands: J
+Pop/Push: 1/0
+
+Branch if `$1 >= 0`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x39 JUMPL`
+
+Operands: J
+Pop/Push: 2/0
+
+Branch if `$2 < $1`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x3A JUMPLE`
+
+Operands: J
+Pop/Push: 2/0
+
+Branch if `$2 <= $1`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x3B JUMPGE`
+
+Operands: J
+Pop/Push: 2/0
+
+Branch if `$2 >= $1`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x3C JUMPG`
+
+Operands: J
+Pop/Push: 2/0
+
+Branch if `$2 > $1`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x3D JUMPEQ`
+
+Operands: J
+Pop/Push: 2/0
+
+Branch if `$2 == $1`. See §5.3.2 for the jump-target encoding.
+
+---
+
+### `0x3E JUMPNE`
+
+Operands: J
+Pop/Push: 2/0
+
+Branch if `$2 != $1`. See §5.3.2 for the jump-target encoding.
 
 ---
 
@@ -2937,15 +3062,11 @@ Push constant `7`.
 Operands: -
 Pop/Push: 3/0
 
-Print bytes from a vector payload to the display. `$3` is the source vector
-handle, `$2` is the number of bytes to print, and `$1` is the byte offset into
-the payload. An initial length word is skipped: byte offset `$1 = 0` addresses
-the first byte after the length word.
-
-> **Provisional:** The above operand roles have been identified from
-> reverse-engineering but have not been fully confirmed against MME. The
-> relationship between `PRINTV` and `PRCHAR` display semantics (character set,
-> cursor movement) has not been confirmed.
+Print bytes from a vector payload to the display, as if they were printed one at
+a time by `PRCHAR`. `$3` is the source vector handle, `$2` is the number of
+bytes to print, and `$1` is the byte offset into the payload. An initial length
+word is skipped: byte offset `$1 = 0` addresses the first byte after the length
+word.
 
 ---
 
@@ -3276,8 +3397,8 @@ Close the channel `$1` and push a status result.
 Operands: -
 Pop/Push: 3/1
 
-Read `$1` words from channel `$2` into aggregate `$3`, starting at the
-beginning of the aggregate. Push a status result.
+Read `$1` words from channel `$2` into aggregate `$3`, starting after the
+aggregate's initial length word. Push a status result.
 
 > **Provisional:** The meaning of the pushed status value has not been
 > confirmed against MME.
@@ -3502,9 +3623,9 @@ descriptor handle `D`, `$3` is the source string handle `S`, `$2` is the
 maximum character count `N`, and `$1` is the starting character offset `O`
 within the string.
 
-Push the number of characters actually printed, or **FALSE** if the window has
-zero visible width. The full algorithm, including bound computation, clipping,
-and the `SETWIN` call it performs implicitly, is defined in §8.4.4.
+Push the logical column value from the descriptor, or **FALSE** if the window
+has zero visible width. The full algorithm, including bound computation,
+clipping, and the `SETWIN` call it performs implicitly, is defined in §8.4.4.
 
 ---
 
@@ -3516,8 +3637,8 @@ Pop/Push: 1/1
 Activate the window described by the window descriptor at handle `$1`.
 Initialise the cursor and display attributes from the descriptor vector, commit
 the cursor position via system variables `0xCA` and `0xC9`, and mirror the text
-attribute into system variable `0xD5`. Push `$1`. The full activation
-algorithm is defined in §8.4.3.
+attribute into system variable `0xD5`. Push the logical column value from the
+descriptor. The full activation algorithm is defined in §8.4.3.
 
 ---
 
@@ -3584,8 +3705,8 @@ Operands: -
 Pop/Push: 4/1
 
 Compare `$2` bytes of aggregate `$3`, starting at byte offset `$1`, against
-aggregate `$4`, starting at byte offset `2`, and push the signed comparison
-result; see §1.5.2.
+aggregate `$4`, starting at byte offset `2` (skipping an initial length word),
+and push the signed comparison result; see §1.5.2.
 
 > **Note:** The sign convention is the opposite of C `memcmp`: the result is
 > `+1` when the first operand (`$3`) is *smaller*, and `−1` when it is
@@ -3658,7 +3779,7 @@ Increment module global `$B` and push the new value. See §7.4.
 ### `0x5F 0x2C STOREMG`
 
 Operands: B
-Pop/Push: 1/1
+Pop/Push: 0/0
 
 Copy the top word of the evaluation stack into module global `$B`, leaving
 the stack unchanged. See §7.4.
@@ -3668,7 +3789,7 @@ the stack unchanged. See §7.4.
 ### `0x5F 0x2D STOREG`
 
 Operands: B
-Pop/Push: 1/1
+Pop/Push: 0/0
 
 Copy the top word of the evaluation stack into program global `$B`, leaving
 the stack unchanged. See §7.3.
@@ -3816,39 +3937,7 @@ Operands: -
 Pop/Push: 1/1
 
 Resolve a packed descriptor key through a two-level descriptor table. The
-algorithm is defined in §8.5.2. System variable `0xD8` holds the root of the
-descriptor table; see §7.5.5.
-
-The root aggregate at system variable `0xD8` is a four-word vector with the
-following fields:
-
-- Word 0 (`R[0]`): handle of the primary table.
-- Word 1 (`R[1]`): not currently defined by this specification.
-- Word 2 (`R[2]`): base handle added to successful relative descriptor values.
-- Word 3 (`R[3]`): far-procedure selector for the fallback resolver.
-
-The packed lookup key `$1` is interpreted as:
-
-- Low 7 bits: primary 1-based index `I`.
-- High byte: secondary 1-based index `J`.
-
-A key with `I = 0` or `J = 0` is invalid.
-
-The lookup process is:
-
-1. Read the primary table handle `P = R[0]`.
-2. Read the secondary table handle `S = P[2 * (I - 1)]`.
-3. If `S` is `0` or **FALSE**, perform a far call to resolver procedure `R[3]`
-   with the original packed key as its sole argument; the resolver's return
-   value becomes the result.
-4. Otherwise, read `D = S[J - 1] & 0x3FFF`.
-5. If `D ≠ 0x3FFF`, push `R[2] + D`.
-6. Otherwise, perform the same fallback far call to `R[3]`.
-
-> **Note:** The full algorithm, including the fallback-resolver contract, will
-> be the canonical definition in §8.5.2. This entry is retained here for
-> completeness during the transition; once §8.5.2 is finalized, this algorithm
-> description will be condensed to a cross-reference.
+algorithm is defined in §8.5.2.
 
 ---
 
@@ -3859,94 +3948,6 @@ Pop/Push: 8/1
 
 Extract data from a structured aggregate using a multi-mode descriptor walker.
 The algorithm is defined in §8.5.3.
-
-The stack inputs are:
-
-- `$8 = B`: base aggregate handle.
-- `$7 = S`: available span in words.
-- `$6 = D`: destination aggregate handle, or **FALSE** if no destination copy
-  is required.
-- `$5 = A`: auxiliary selector.
-- `$4 = K`: auxiliary selector or starting word offset.
-- `$3 = O`: explicit word offset within the adjusted source, or **FALSE**.
-- `$2 = G`: nonzero-content guard, or **FALSE**.
-- `$1 = M`: mode or component selector.
-
-`EXTRACT` recognizes two primary record layouts:
-
-An **ordinary record** has a header word whose low byte is a tag and whose
-high byte is a component count, followed immediately by a payload of
-zero or more **packed fields**. If the component count is zero, the payload
-is a single packed field.
-
-A **packed field** starts with a length byte `L`. If bit 7 of `L` is clear,
-the field contains `L` data bytes following the length byte, and its encoded
-size is `L + 1` bytes rounded up to a whole number of words. If bit 7 is set,
-the field is a fixed-size 8-byte real value occupying 4 words.
-
-A **typed field** is an alternative interpretation of the same bytes, used
-when ordinary-record decoding is not applicable. A typed field begins with a
-header word whose low byte is a kind and high byte is a component count. If
-the header is zero, the field is empty (one word). If `kind = 0`, the following
-word gives the total length in words and the remaining bytes are a
-variable-sized payload. If `kind > 0`, the field contains `count` fixed-width
-components each `kind` bytes long; total size is `1 + count * ceil(kind / 2)`
-words.
-
-The extraction process:
-
-1. Compute an adjusted source position from `B`, `A`, and `K`:
-   - If `K` is not **FALSE**, treat `K` as an initial word offset, then
-     advance past `A` typed fields using the typed-field sizing rules; let the
-     result be effective base `E`.
-   - Otherwise, treat `A` as a raw word offset; `E = B + A`.
-2. Let the remaining span be `S' = S - (E - B)`.
-3. If `O` is not **FALSE**, treat `E + O` as the start of one ordinary record
-   and operate on that record.
-4. Otherwise, if `M` is not **FALSE**, first attempt to decode an ordinary
-   record at `E`; if that fails, decode a typed field at `E`.
-5. Otherwise, if `G` is not **FALSE**, treat the first `G` raw bytes at `E` as
-   the selected span.
-6. Otherwise, treat `E` as starting with a leading packed field.
-
-Once an item is selected, mode `M` determines the result:
-
-- **FALSE**: operate on the whole selected item.
-- `0` or `0xFFFF`: return the selected item's high-byte count field.
-- `n > 0`: select the `n`th component of the selected item.
-
-Whole-item behavior:
-
-- Ordinary record: result is the payload byte length; if `D` is a usable
-  destination of sufficient capacity, only the payload bytes are copied.
-- Typed field: result is the payload byte length; if `D` is large enough, the
-  copy includes the typed-field header word.
-- Raw-byte-span (`G` path): result is exactly `G`; those raw bytes are copied
-  if `D` is large enough.
-- Leading-packed-field path: result is the field byte length; those bytes are
-  copied from the word after the length word.
-
-Component-selection behavior:
-
-- Ordinary record or typed field with `kind = 0`: the `n`th packed subfield.
-- Typed field with `kind > 0`: the `n`th fixed-width component (`kind` bytes).
-- Result is the selected component's byte length; bytes are copied to `D` if
-  `D` is adequate.
-
-Guard `G` is applied in the whole-item ordinary-record path, the whole-item
-typed-field path, and typed-field component extraction: if the selected span
-contains no nonzero byte, `EXTRACT` returns **FALSE** instead of copying or
-reporting the length.
-
-`EXTRACT` returns **FALSE** if: the base handle is invalid; the selected
-structure extends past the available span; the requested component does not
-exist; the leading packed field has length zero; or a guarded selection fails
-the nonzero-byte test.
-
-> **Note:** The full algorithm will be the canonical definition in §8.5.3.
-> This entry is retained here for completeness during the transition; once
-> §8.5.3 is finalized, this algorithm description will be condensed to a
-> cross-reference.
 
 ---
 
