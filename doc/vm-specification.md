@@ -2019,7 +2019,7 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 
 | Opcode | Mnemonic | Operands | Pops | Pushes | Access | Description |
 | --- | --- | --- | ---: | ---: | --- | --- |
-| 0x00 | [`BREAK`](#0x00-break) | `-` | 0 | 0 | | reserved debug-trap or breakpoint operation. Structural decoding is defined; full VM-visible semantics are not defined by this edition. |
+| 0x00 | [`BREAK`](#0x00-break) | `-` | 0 | 0 | | reserved for use as a debug-trap or breakpoint operation |
 | 0x01 | [`ADD`](#0x01-add) | `-` | 2 | 1 | | pop two words and push their sum. |
 | 0x02 | [`SUB`](#0x02-sub) | `-` | 2 | 1 | | push `$2 - $1`. |
 | 0x03 | [`MUL`](#0x03-mul) | `-` | 2 | 1 | | pop two words and push their product. |
@@ -2028,10 +2028,10 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 | 0x06 | [`NEG`](#0x06-neg) | `-` | 1 | 1 | | push `-$1`. |
 | 0x07 | [`ASHIFT`](#0x07-ashift) | `-` | 2 | 1 | | push `$2` arithmetically shifted by `$1` bits; positive counts shift left, negative counts shift right with sign extension. |
 | 0x08 | [`INCL`](#0x08-incl) | `B` | 0 | 1 | | increment local `$B` and push the new value. |
-| 0x09 | [`PUSH8`](#0x09-push8) | `-` | 0 | 1 | push constant `8`. |
-| 0x0A | [`PUSH4`](#0x0a-push4) | `-` | 0 | 1 | push constant `4`. |
-| 0x0B | [`DECL`](#0x0b-decl) | `B` | 0 | 1 | decrement local `$B` and push the new value. |
-| 0x0C | [`PUSHm1`](#0x0c-pushm1) | `-` | 0 | 1 | push constant `0xFFFF`. |
+| 0x09 | [`PUSH8`](#0x09-push8) | `-` | 0 | 1 | | push constant `8`. |
+| 0x0A | [`PUSH4`](#0x0a-push4) | `-` | 0 | 1 | | push constant `4`. |
+| 0x0B | [`DECL`](#0x0b-decl) | `B` | 0 | 1 | | decrement local `$B` and push the new value. |
+| 0x0C | [`PUSHm1`](#0x0c-pushm1) | `-` | 0 | 1 | | push constant `0xFFFF`. |
 | 0x0D | [`PUSH3`](#0x0d-push3) | `-` | 0 | 1 | | push constant `3`. |
 | 0x0E | [`AND`](#0x0e-and) | `-` | 2 | 1 | | bitwise AND. |
 | 0x0F | [`OR`](#0x0f-or) | `-` | 2 | 1 | | bitwise OR. |
@@ -2059,7 +2059,7 @@ paths, if the selected byte span contains no nonzero byte, `EXTRACT` returns
 | 0x1E | [`VECSETW`](#0x1e-vecsetw) | `-` | 3 | 1 | C | fill handle `$3` with `$2` words of value `$1` starting at physical word offset 0, and leave that handle on the evaluation stack. |
 | 0x1F | [`VECSETB`](#0x1f-vecsetb) | `-` | 3 | 1 | D | fill handle `$3` with `$2` bytes of value `low8($1)` starting at the first payload byte, and leave that handle on the evaluation stack. |
 | 0x20 | [`VECCPYW`](#0x20-veccpyw) | `-` | 3 | 1 | C | copy `$2` words from source handle `$3` to destination handle `$1` starting at physical word offset 0 in both aggregates, and leave the destination handle on the evaluation stack. |
-| 0x21 | [`VECCPYB`](#0x21-veccpyb) | `-` | 5 | 1 | C (provisional) | copy `$4` bytes from source handle `$5` at byte offset `$2` to destination handle `$3` at byte offset `$1` and leave the destination handle on the evaluation stack. |
+| 0x21 | [`VECCPYB`](#0x21-veccpyb) | `-` | 5 | 1 | C | copy `$4` bytes from source handle `$5` at byte offset `$2` to destination handle `$3` at byte offset `$1` and leave the destination handle on the evaluation stack. |
 
 ---
 
@@ -2619,7 +2619,7 @@ at physical word offset 0 in both aggregates (no length-word skip). Push `$1`.
 
 Operands: -
 Pop/Push: 5/1
-Access convention: C (provisional)
+Access convention: C
 
 Copy `$4` bytes from source handle `$5` at zero-based byte offset `$2` to
 destination handle `$3` at zero-based byte offset `$1`, then push `$3`.
