@@ -1,0 +1,600 @@
+; Interactive Mandelbrot viewer using floating-point opcodes.
+; Arrow keys pan, Page Up / Page Down zoom, and ESC ESC exits.
+
+SCREEN_COLS = 64
+SCREEN_ROWS = 20
+DRAW_TOP = 3
+MAX_ITER = 18
+LINE_BUFFER_WORDS = 0x0021
+REAL_BUFFER_WORDS = 5
+REAL_BYTE_COUNT = 8
+
+TITLE::
+.string "Mandelbrot Viewer"
+
+HELP1::
+.string "Arrows to pan, PgUp/PgDn to zoom, Home to reset."
+
+HELP2::
+.string "ESC to exit."
+
+GRADIENT::
+.string " .,:;ox%#@"
+
+REAL_CENTER_X::
+.word REAL_BYTE_COUNT
+.bytes 0xBF, 0xE0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+REAL_CENTER_Y::
+.word REAL_BYTE_COUNT
+.bytes 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+REAL_SCALE_X::
+.word REAL_BYTE_COUNT
+.bytes 0x3F, 0xA9, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9A
+
+REAL_SCALE_Y::
+.word REAL_BYTE_COUNT
+.bytes 0x3F, 0xB9, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9A
+
+REAL_HALF_COLS::
+.word REAL_BYTE_COUNT
+.bytes 0x40, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+REAL_HALF_ROWS::
+.word REAL_BYTE_COUNT
+.bytes 0x40, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+REAL_PAN_X_STEPS::
+.word REAL_BYTE_COUNT
+.bytes 0x40, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+REAL_PAN_Y_STEPS::
+.word REAL_BYTE_COUNT
+.bytes 0x40, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+REAL_ONE_HALF::
+.word REAL_BYTE_COUNT
+.bytes 0x3F, 0xE0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+REAL_TWO::
+.word REAL_BYTE_COUNT
+.bytes 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+REAL_FOUR::
+.word REAL_BYTE_COUNT
+.bytes 0x40, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+REAL_ZERO::
+.word REAL_BYTE_COUNT
+.bytes 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+.module Main
+
+.modglobal LineBuffer=0, CenterX=0, CenterY=0, ScaleX=0, ScaleY=0, StartX=0, CurrentX=0, CurrentY=0, ZX=0, ZY=0, ZX2=0, ZY2=0, Temp=0, Sum=0
+
+.export Start, 0
+
+.proc Start locals 2
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+    PUSHW LINE_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW SCREEN_COLS
+    VPUTW_ 0
+    PUTMG LineBuffer
+
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG CenterX
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG CenterY
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG ScaleX
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG ScaleY
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG StartX
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG CurrentX
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG CurrentY
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG ZX
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG ZY
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG ZX2
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG ZY2
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG Temp
+    PUSHW REAL_BUFFER_WORDS
+    VALLOC
+    DUP
+    PUSHW REAL_BYTE_COUNT
+    VPUTW_ 0
+    PUTMG Sum
+
+    CALL0 ResetView
+
+    CALL0 DrawHeader
+    CALL0 RenderScene
+
+read_key:
+    KBINPUT
+    STORE_L0
+    JUMPF read_key
+
+    PUSHB 0x1B
+    PUSH_L0
+    JUMPEQ read_escape
+
+    JUMP read_key
+
+read_escape:
+escape_key:
+    KBINPUT
+    STORE_L1
+    JUMPF escape_key
+
+    PUSHB 0x1B
+    PUSH_L1
+    JUMPEQ exit_program
+
+    ; Left arrow.
+    PUSHB 0x4B
+    PUSH_L1
+    JUMPEQ pan_left
+
+    ; Right arrow.
+    PUSHB 0x4D
+    PUSH_L1
+    JUMPEQ pan_right
+
+    ; Up arrow.
+    PUSHB 0x48
+    PUSH_L1
+    JUMPEQ pan_up
+
+    ; Home resets the viewport.
+    PUSHB 0x47
+    PUSH_L1
+    JUMPEQ reset_view
+
+    ; Down arrow.
+    PUSHB 0x50
+    PUSH_L1
+    JUMPEQ pan_down
+
+    ; Page Up.
+    PUSHB 0x49
+    PUSH_L1
+    JUMPEQ zoom_in
+
+    ; Page Down.
+    PUSHB 0x51
+    PUSH_L1
+    JUMPEQ zoom_out
+
+    JUMP read_key
+
+pan_left:
+    LOADMG ScaleX
+    PUSHW REAL_PAN_X_STEPS
+    LOADMG Temp
+    FMUL
+    POP
+
+    LOADMG CenterX
+    LOADMG Temp
+    LOADMG CenterX
+    FSUB
+    POP
+
+    CALL0 RenderScene
+    JUMP read_key
+
+pan_right:
+    LOADMG ScaleX
+    PUSHW REAL_PAN_X_STEPS
+    LOADMG Temp
+    FMUL
+    POP
+
+    LOADMG CenterX
+    LOADMG Temp
+    LOADMG CenterX
+    FADD
+    POP
+
+    CALL0 RenderScene
+    JUMP read_key
+
+pan_up:
+    LOADMG ScaleY
+    PUSHW REAL_PAN_Y_STEPS
+    LOADMG Temp
+    FMUL
+    POP
+
+    LOADMG CenterY
+    LOADMG Temp
+    LOADMG CenterY
+    FADD
+    POP
+
+    CALL0 RenderScene
+    JUMP read_key
+
+pan_down:
+    LOADMG ScaleY
+    PUSHW REAL_PAN_Y_STEPS
+    LOADMG Temp
+    FMUL
+    POP
+
+    LOADMG CenterY
+    LOADMG Temp
+    LOADMG CenterY
+    FSUB
+    POP
+
+    CALL0 RenderScene
+    JUMP read_key
+
+zoom_in:
+    LOADMG ScaleX
+    PUSHW REAL_ONE_HALF
+    LOADMG ScaleX
+    FMUL
+    POP
+
+    LOADMG ScaleY
+    PUSHW REAL_ONE_HALF
+    LOADMG ScaleY
+    FMUL
+    POP
+
+    CALL0 RenderScene
+    JUMP read_key
+
+zoom_out:
+    LOADMG ScaleX
+    PUSHW REAL_TWO
+    LOADMG ScaleX
+    FMUL
+    POP
+
+    LOADMG ScaleY
+    PUSHW REAL_TWO
+    LOADMG ScaleY
+    FMUL
+    POP
+
+    CALL0 RenderScene
+    JUMP read_key
+
+reset_view:
+    CALL0 ResetView
+    CALL0 RenderScene
+    JUMP read_key
+
+exit_program:
+    HALT 1
+.endproc
+
+.proc ResetView locals 0
+    PUSHW REAL_CENTER_X
+    LOADMG CenterX
+    CALL2 CopyReal
+    PUSHW REAL_CENTER_Y
+    LOADMG CenterY
+    CALL2 CopyReal
+    PUSHW REAL_SCALE_X
+    LOADMG ScaleX
+    CALL2 CopyReal
+    PUSHW REAL_SCALE_Y
+    LOADMG ScaleY
+    CALL2 CopyReal
+    RET
+.endproc
+
+.proc DrawHeader locals 0
+    PUSH0
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    PUSHW TITLE
+    PUSHW TITLE
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSH1
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    PUSHW HELP1
+    PUSHW HELP1
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    PUSH2
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    PUSHW HELP2
+    PUSHW HELP2
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+    RET
+.endproc
+
+.proc RenderScene locals 3
+    PUSHW DRAW_TOP
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+    DISP 0x05
+
+    LOADMG ScaleX
+    PUSHW REAL_HALF_COLS
+    LOADMG Temp
+    FMUL
+    POP
+
+    LOADMG CenterX
+    LOADMG Temp
+    LOADMG StartX
+    FSUB
+    POP
+
+    LOADMG ScaleY
+    PUSHW REAL_HALF_ROWS
+    LOADMG Temp
+    FMUL
+    POP
+
+    LOADMG CenterY
+    LOADMG Temp
+    LOADMG CurrentY
+    FADD
+    POP
+
+    PUSH0
+    PUT_L0
+
+row_loop:
+    PUSH_L0
+    PUSHW SCREEN_ROWS
+    JUMPEQ render_done
+
+    LOADMG StartX
+    LOADMG CurrentX
+    CALL2 CopyReal
+
+    PUSH0
+    PUT_L1
+
+column_loop:
+    PUSH_L1
+    PUSHW SCREEN_COLS
+    JUMPEQ print_row
+
+    CALL0 ComputePixelChar
+    PUT_L2
+
+    LOADMG LineBuffer
+    PUSH_L1
+    PUSH1
+    ADD
+    PUSH_L2
+    VPUTB
+
+    LOADMG CurrentX
+    LOADMG ScaleX
+    LOADMG CurrentX
+    FADD
+    POP
+
+    PUSH_L1
+    PUSH1
+    ADD
+    PUT_L1
+    JUMP column_loop
+
+print_row:
+    PUSHW DRAW_TOP
+    PUSH_L0
+    ADD
+    PUTMG 0xCA
+    PUSH0
+    PUTMG 0xC9
+
+    LOADMG LineBuffer
+    LOADMG LineBuffer
+    VLOADW_ 0
+    PUSH0
+    PRINTV
+
+    LOADMG CurrentY
+    LOADMG ScaleY
+    LOADMG CurrentY
+    FSUB
+    POP
+
+    PUSH_L0
+    PUSH1
+    ADD
+    PUT_L0
+    JUMP row_loop
+
+render_done:
+    RET
+.endproc
+
+.proc ComputePixelChar locals 3
+    PUSHW REAL_ZERO
+    LOADMG ZX
+    CALL2 CopyReal
+    PUSHW REAL_ZERO
+    LOADMG ZY
+    CALL2 CopyReal
+
+    PUSH0
+    PUT_L0
+
+iterate:
+    LOADMG ZX
+    LOADMG ZX
+    LOADMG ZX2
+    FMUL
+    POP
+
+    LOADMG ZY
+    LOADMG ZY
+    LOADMG ZY2
+    FMUL
+    POP
+
+    LOADMG ZX2
+    LOADMG ZY2
+    LOADMG Sum
+    FADD
+    POP
+
+    PUSHW REAL_FOUR
+    LOADMG Sum
+    PUSHB REAL_BYTE_COUNT
+    PUSHB 0x02
+    MEMCMPO
+    PUT_L2
+
+    PUSH_L2
+    JUMPLZ escaped
+
+    PUSH_L0
+    PUSHW MAX_ITER
+    JUMPEQ inside_point
+
+    LOADMG ZX
+    LOADMG ZY
+    LOADMG Temp
+    FMUL
+    POP
+
+    LOADMG Temp
+    PUSHW REAL_TWO
+    LOADMG Sum
+    FMUL
+    POP
+
+    LOADMG Sum
+    LOADMG CurrentY
+    LOADMG ZY
+    FADD
+    POP
+
+    LOADMG ZX2
+    LOADMG ZY2
+    LOADMG Temp
+    FSUB
+    POP
+
+    LOADMG Temp
+    LOADMG CurrentX
+    LOADMG ZX
+    FADD
+    POP
+
+    PUSH_L0
+    PUSH1
+    ADD
+    PUT_L0
+    JUMP iterate
+
+escaped:
+    PUSH_L0
+    PUSHB 0x02
+    DIV
+    PUSH1
+    ADD
+    PUT_L1
+    JUMP return_char
+
+inside_point:
+    PUSHB 0x0A
+    PUT_L1
+
+return_char:
+    PUSHW GRADIENT
+    PUSH_L1
+    VLOADB
+    RETURN
+.endproc
+
+.proc CopyReal locals 2
+    PUSH_L0
+    PUSHW REAL_BUFFER_WORDS
+    PUSH_L1
+    VECCPYW
+    POP
+    RET
+.endproc
+
+.entry Main.Start
