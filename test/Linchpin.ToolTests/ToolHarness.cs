@@ -38,6 +38,8 @@ internal static class ToolHarness
 
 	private static readonly Lazy<(bool Available, string Message)> LinchpinStAvailability = new(ProbeLinchpinStAvailability);
 
+	public static bool IsLinchpinStAvailable => LinchpinStAvailability.Value.Available;
+
 	public static void RequireLinchpinSt()
 	{
 		(bool available, string message) = LinchpinStAvailability.Value;

@@ -56,12 +56,16 @@ public sealed class ChiselIntegrationTests
 	public void AssembleAndRunMatchesSharedRuntimeExpectation(RuntimeCaseDefinition testCase)
 	{
 		Assert.IsNotNull(testCase.ChiselSourcePath, "Chisel test cases must define a source path.");
-		using RuntimeWorkspace workspace = RuntimeWorkspace.Create($"chisel-{testCase.Name}", testCase.DataDirectoryPath);
-		string mmePath = Path.Combine(workspace.RootPath, $"{testCase.Name}.mme");
-		string objPath = Path.Combine(workspace.RootPath, $"{testCase.Name}.obj");
-		ProcessResult assemble = ToolHarness.RunChiselAssemble(testCase.ChiselSourcePath!, mmePath, objPath);
-		Assert.AreEqual(0, assemble.ExitCode, ToolHarness.DescribeProcessFailure("Chisel", assemble));
-		ToolRunOutcome run = ToolHarness.RunLinchpin(testCase, workspace, mmePath, objPath);
+		RuntimeCaseOutcomes outcomes = RuntimeCaseResults.Get(testCase.Name);
+		Assert.IsNotNull(outcomes.AssemblyResult, "Expected an assembly result for a Chisel test case.");
+		Assert.AreEqual(0, outcomes.AssemblyResult.ExitCode, ToolHarness.DescribeProcessFailure("Chisel", outcomes.AssemblyResult));
+		if (outcomes.LinchpinOutcome is null)
+		{
+			Assert.Fail($"Linchpin did not run for case '{testCase.Name}' (assembly may have failed).");
+			return;
+		}
+
+		ToolRunOutcome run = outcomes.LinchpinOutcome;
 		Assert.AreEqual(0, run.Process.ExitCode, ToolHarness.DescribeProcessFailure("Linchpin", run.Process));
 		Assert.AreEqual(testCase.ExpectedInstructionCount, run.Report.ExecutedInstructionCount, ToolHarness.DescribeProcessFailure("Linchpin", run.Process));
 		ToolHarness.AssertEquivalentScreenText(testCase.ExpectedScreenText, run.Report.ScreenText, ToolHarness.DescribeProcessFailure("Linchpin", run.Process));

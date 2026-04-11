@@ -9,23 +9,19 @@ public sealed class LinchpinRuntimeTests
 {
 	public static IEnumerable<object[]> GetRuntimeCases() => RuntimeCaseCatalog.DynamicData();
 
-	[TestMethod]
-	[TestCategory("Linchpin")]
-	public void CornerstoneConformanceMatchesExpectedScreenAndInstructionCount()
-	{
-		RuntimeCaseDefinition testCase = RuntimeCaseCatalog.AllCases.Single(static testCase => testCase.Name == "cornerstone-conformance");
-		ToolRunOutcome outcome = ToolHarness.RunLinchpin(testCase);
-		Assert.AreEqual(0, outcome.Process.ExitCode, ToolHarness.DescribeProcessFailure("Linchpin", outcome.Process));
-		Assert.AreEqual(testCase.ExpectedInstructionCount, outcome.Report.ExecutedInstructionCount, ToolHarness.DescribeProcessFailure("Linchpin", outcome.Process));
-		ToolHarness.AssertEquivalentScreenText(testCase.ExpectedScreenText, outcome.Report.ScreenText, ToolHarness.DescribeProcessFailure("Linchpin", outcome.Process));
-	}
-
 	[DataTestMethod]
 	[DynamicData(nameof(GetRuntimeCases), DynamicDataSourceType.Method)]
 	[TestCategory("Linchpin")]
 	public void SharedRuntimeCaseMatchesExpectedScreenAndInstructionCount(RuntimeCaseDefinition testCase)
 	{
-		ToolRunOutcome outcome = ToolHarness.RunLinchpin(testCase);
+		RuntimeCaseOutcomes outcomes = RuntimeCaseResults.Get(testCase.Name);
+		if (outcomes.LinchpinOutcome is null)
+		{
+			Assert.Fail($"Linchpin did not run for case '{testCase.Name}' (assembly may have failed).");
+			return;
+		}
+
+		ToolRunOutcome outcome = outcomes.LinchpinOutcome;
 		Assert.AreEqual(0, outcome.Process.ExitCode, ToolHarness.DescribeProcessFailure("Linchpin", outcome.Process));
 		Assert.AreEqual(testCase.ExpectedInstructionCount, outcome.Report.ExecutedInstructionCount, ToolHarness.DescribeProcessFailure("Linchpin", outcome.Process));
 		ToolHarness.AssertEquivalentScreenText(testCase.ExpectedScreenText, outcome.Report.ScreenText, ToolHarness.DescribeProcessFailure("Linchpin", outcome.Process));

@@ -15,25 +15,17 @@ public sealed class LinchpinStRuntimeTests
 	[TestCategory("WSL")]
 	public void SharedRuntimeCaseMatchesExpectedScreenAndInstructionCount(RuntimeCaseDefinition testCase)
 	{
-		ToolHarness.RequireLinchpinSt();
-		ToolRunOutcome outcome = ToolHarness.RunLinchpinSt(testCase);
+		RuntimeCaseOutcomes outcomes = RuntimeCaseResults.Get(testCase.Name);
+		if (outcomes.LinchpinStOutcome is null)
+		{
+			ToolHarness.RequireLinchpinSt();
+			Assert.Fail($"LinchpinST did not run for case '{testCase.Name}' (assembly may have failed).");
+			return;
+		}
+
+		ToolRunOutcome outcome = outcomes.LinchpinStOutcome;
 		Assert.AreEqual(0, outcome.Process.ExitCode, ToolHarness.DescribeProcessFailure("LinchpinST", outcome.Process));
 		Assert.AreEqual(testCase.ExpectedInstructionCount, outcome.Report.ExecutedInstructionCount, ToolHarness.DescribeProcessFailure("LinchpinST", outcome.Process));
 		ToolHarness.AssertEquivalentScreenText(testCase.ExpectedScreenText, outcome.Report.ScreenText, ToolHarness.DescribeProcessFailure("LinchpinST", outcome.Process));
-	}
-
-	[DataTestMethod]
-	[DynamicData(nameof(GetRuntimeCases), DynamicDataSourceType.Method)]
-	[TestCategory("LinchpinST")]
-	[TestCategory("WSL")]
-	public void SharedRuntimeCaseMatchesLinchpinParity(RuntimeCaseDefinition testCase)
-	{
-		ToolHarness.RequireLinchpinSt();
-		ToolRunOutcome linchpin = ToolHarness.RunLinchpin(testCase);
-		ToolRunOutcome linchpinSt = ToolHarness.RunLinchpinSt(testCase);
-		Assert.AreEqual(0, linchpin.Process.ExitCode, ToolHarness.DescribeProcessFailure("Linchpin", linchpin.Process));
-		Assert.AreEqual(0, linchpinSt.Process.ExitCode, ToolHarness.DescribeProcessFailure("LinchpinST", linchpinSt.Process));
-		Assert.AreEqual(linchpin.Report.ExecutedInstructionCount, linchpinSt.Report.ExecutedInstructionCount, ToolHarness.DescribeProcessFailure("LinchpinST", linchpinSt.Process));
-		ToolHarness.AssertEquivalentScreenText(linchpin.Report.ScreenText, linchpinSt.Report.ScreenText, ToolHarness.DescribeProcessFailure("LinchpinST", linchpinSt.Process));
 	}
 }
