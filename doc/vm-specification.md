@@ -473,7 +473,7 @@ The **high vector-heap space** is the lower portion of the high RAM segment,
 beginning at logical address `0x8000`. It is also managed by the vector
 allocator.
 
-The **tuple stack** occupies the uppermost 1/64th of the high RAM segment; if
+The **tuple stack** occupies the uppermost 1/64 of the high RAM segment; if
 a full 64 KiB is available in the high RAM segment, the tuple stack occupies 512
 words at logical addresses `0xFE00–0xFFFF`. The tuple stack grows downward from
 its upper bound toward lower addresses as tuples are allocated.
@@ -518,14 +518,18 @@ unallocated memory for allocator state.
 
 ### 4.4 Tuple Stack
 
-The **tuple stack** is the 512-word region at logical addresses `0xFE00–0xFFFF`
-in the high RAM segment (see section 4.2). Its size is 1/64 of the 32,768-word
-high RAM segment. The interpreter maintains an implementation-internal
-**tuple-stack pointer** identifying the current top of the stack. The tuple
-stack grows downward: allocating a tuple advances the pointer toward lower
-addresses; freeing tuple memory advances it toward higher addresses.
+The **tuple stack** is the region occupying the uppermost 1/64 of the high RAM
+segment (see section 4.2). When the full 128 KiB is available to the VM, the
+tuple stack occupies 512 words at logical addresses `0xFE00–0xFFFF`. The
+interpreter maintains an implementation-internal **tuple-stack pointer**
+identifying the current top of the stack. The tuple stack grows downward:
+allocating a tuple advances the pointer toward lower addresses; freeing tuple
+memory advances it toward higher addresses.
 
 All tuple allocations are in whole words.
+
+> **Note:** Programs that continue allocating tuples after exhausting the tuple
+> produce undefined behavior.
 
 `TALLOC` allocates a tuple of `$1` total words, advances the tuple-stack
 pointer downward by `$1` words, and pushes the handle of the first word of the
@@ -538,8 +542,10 @@ handle.
 Tuple memory is reclaimed in two ways:
 
 - **Explicit reclamation**: `TPOP` advances the tuple-stack pointer upward by
-  `$1` words. The program must supply the exact word count of the tuple being
-  freed. `TPOP` does not consume a handle; it simply moves the pointer.
+  `$1` words. `TPOP` does not consume a handle; it simply moves the pointer.
+  `$1` does not need to match the size of any tuple allocation; any number of
+  words may be popped, as long as the number does not exceed the current depth
+  of the tuple stack.
 - **Implicit reclamation**: `LONGJMP` and `LONGJMPR` restore the tuple-stack
   pointer to the depth captured by the corresponding `SETJMP`, implicitly
   freeing all tuples allocated since that save point. For full semantics, see
@@ -547,9 +553,6 @@ Tuple memory is reclaimed in two ways:
 
 The current depth of the tuple stack is part of the activation record saved by
 `SETJMP` and restored by `LONGJMP` and `LONGJMPR`; see section 6.
-
-> **Note:** The tuple-stack size is 512 words. Programs that exhaust this space
-> produce undefined behavior.
 
 ### 4.5 Aggregate Handles and Visible Layout
 
