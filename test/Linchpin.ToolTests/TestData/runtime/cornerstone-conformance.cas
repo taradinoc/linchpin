@@ -260,13 +260,9 @@ REAL_FMT_PARENS_DECIMAL::
 RAW_KEYCMP_HIGH::
 .byte 0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x41, 0x43, 0x00
 
-.program_globals 0x0000
-
 .module Main
 
-.module_globals 0x0000
-
-.global FailFlag=0
+.modglobal FailFlag=0
 
 .export Start, 0
 .export NearIncrement, 1
@@ -1775,9 +1771,7 @@ hex_alpha:
 
 .module Aux
 
-.module_globals 0x0000
-
-.global Counter=0
+.modglobal Counter=0
 
 .export DoubleValue, 0
 .export ReturnFalse, 1

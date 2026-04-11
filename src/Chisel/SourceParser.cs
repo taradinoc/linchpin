@@ -215,39 +215,35 @@ internal static partial class Program
 					modules.Add(currentModule);
 					break;
 
-				case ".module_globals":
-					if (currentModule is null)
+				case ".global":
+					RequireProcedureClosed(".global", lineNumber);
+					if (currentModule is not null)
 					{
-						throw new AssemblerException($"Line {lineNumber}: .module_globals must appear after .module.");
+						throw new AssemblerException($"Line {lineNumber}: .global must appear before any .module directive; use .modglobal for module-scoped globals.");
 					}
 
-					currentModule.ModuleGlobals.AddRange(ParseCommaSeparated(tokens.Skip(1).ToList(), lineNumber));
-					currentModule.ModuleGlobalsLine ??= lineNumber;
+					foreach (NamedSlotDeclaration declaration in ParseNamedSlotDeclarations(tokens.Skip(1).ToList(), lineNumber, requireInitializer: true))
+					{
+						AddNamedSlot(programGlobals, programGlobalNames, declaration, lineNumber, "program global");
+					}
+
+					programGlobalsLine ??= lineNumber;
 					break;
 
-					case ".global":
-						RequireProcedureClosed(".global", lineNumber);
-						List<NamedSlotDeclaration> globalDeclarations = ParseNamedSlotDeclarations(tokens.Skip(1).ToList(), lineNumber, requireInitializer: true);
-						if (currentModule is null)
-						{
-							foreach (NamedSlotDeclaration declaration in globalDeclarations)
-							{
-								AddNamedSlot(programGlobals, programGlobalNames, declaration, lineNumber, "program global");
-							}
+				case ".modglobal":
+					RequireProcedureClosed(".modglobal", lineNumber);
+					if (currentModule is null)
+					{
+						throw new AssemblerException($"Line {lineNumber}: .modglobal must appear after a .module directive.");
+					}
 
-							programGlobalsLine ??= lineNumber;
-						}
-						else
-						{
-							foreach (NamedSlotDeclaration declaration in globalDeclarations)
-							{
-								AddNamedSlot(currentModule.ModuleGlobals, currentModule.ModuleGlobalNames, declaration, lineNumber, $"module global in module '{currentModule.Name}'");
-							}
+					foreach (NamedSlotDeclaration declaration in ParseNamedSlotDeclarations(tokens.Skip(1).ToList(), lineNumber, requireInitializer: true))
+					{
+						AddNamedSlot(currentModule.ModuleGlobals, currentModule.ModuleGlobalNames, declaration, lineNumber, $"module global in module '{currentModule.Name}'");
+					}
 
-							currentModule.ModuleGlobalsLine ??= lineNumber;
-						}
-
-						break;
+					currentModule.ModuleGlobalsLine ??= lineNumber;
+					break;
 
 				case ".export":
 					if (currentModule is null)
@@ -270,12 +266,6 @@ internal static partial class Program
 						exportOperands[0],
 						EvaluateNumericLiteral(exportOperands[1], lineNumber, 0, 255),
 						lineNumber));
-					break;
-
-				case ".program_globals":
-					RequireProcedureClosed(".program_globals", lineNumber);
-					programGlobals.AddRange(ParseCommaSeparated(tokens.Skip(1).ToList(), lineNumber));
-					programGlobalsLine ??= lineNumber;
 					break;
 
 				case ".proc":

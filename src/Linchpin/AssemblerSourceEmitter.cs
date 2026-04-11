@@ -93,7 +93,7 @@ internal static class AssemblerSourceEmitter
 		writer.WriteLine($"; Original entry: {GetModuleName(image.EntryPoint.ModuleId)}.{GetExportProcedureName(image.EntryPoint.ProcedureIndex)}");
 		writer.WriteLine();
 
-		EmitWordDirective(writer, ".program_globals", image.Globals.ProgramGlobals.Select(value => FormatWord(value)).ToList(), 12);
+		EmitNamedGlobalsDirective(writer, ".global", "pg", image.Globals.ProgramGlobals.Select(FormatWord).ToList(), 8);
 		writer.WriteLine();
 
 		if (splitModules)
@@ -177,11 +177,12 @@ internal static class AssemblerSourceEmitter
 		}
 
 		writer.WriteLine($".module {GetModuleName(module.ModuleId)}");
-		EmitWordDirective(
+		EmitNamedGlobalsDirective(
 			writer,
-			".module_globals",
-			image.Globals.ModuleGlobals[module.ModuleId - 1].Select(value => FormatWord(value)).ToArray(),
-			12);
+			".modglobal",
+			"mg",
+			image.Globals.ModuleGlobals[module.ModuleId - 1].Select(FormatWord).ToArray(),
+			8);
 
 		foreach (ProcedureDisassembly exportedProcedure in procedures
 			.Where(procedure => procedure.Procedure.ExportedProcedureIndex is not null)
@@ -317,8 +318,22 @@ internal static class AssemblerSourceEmitter
 		writer.WriteLine();
 	}
 
-	private static void EmitWordDirective(TextWriter writer, string directive, IReadOnlyList<string> tokens, int perLine)
+	private static void EmitNamedGlobalsDirective(TextWriter writer, string directive, string namePrefix, IReadOnlyList<string> initialValues, int perLine)
 	{
+		if (initialValues.Count == 0)
+		{
+			return;
+		}
+
+		for (int i = 0; i < initialValues.Count; i += perLine)
+		{
+			IEnumerable<string> batch = Enumerable.Range(i, Math.Min(perLine, initialValues.Count - i))
+				.Select(j => $"{namePrefix}{j}={initialValues[j]}");
+			writer.WriteLine($"{directive} {string.Join(", ", batch)}");
+		}
+	}
+
+	private static void EmitWordDirective(TextWriter writer, string directive, IReadOnlyList<string> tokens, int perLine)	{
 		if (tokens.Count == 0)
 		{
 			return;

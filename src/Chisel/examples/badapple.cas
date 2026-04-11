@@ -32,7 +32,7 @@ STATUS_CLEAR::
 
 .module Main
 
-.global LineBuffer=0, FrameBuffer=0, PidIntegral=0, PidPreviousError=0, StatusEnabled=0
+.modglobal LineBuffer=0, FrameBuffer=0, PidIntegral=0, PidPreviousError=0, StatusEnabled=0
 
 .export Start, 0
 
