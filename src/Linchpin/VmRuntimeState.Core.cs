@@ -20,6 +20,9 @@ internal sealed partial class VmRuntimeState
 	private readonly string repositoryRoot = RepositoryLocator.FindRepositoryRoot();
 	private readonly VmProcedureSymbolCatalog procedureSymbols;
 	private static readonly int? TraceProcedureStartOffset = ParseTraceProcedureStartOffset();
+	private readonly Dictionary<int, ProcedureEntry>[] proceduresByCodeOffset;
+	private readonly Dictionary<int, ProcedureEntry>[] proceduresByStartOffset;
+	private readonly Dictionary<int, int>[] frameUpperBoundsByProcedureStart;
 	private int nextLowArenaByteOffset;
 	private int nextHighArenaByteOffset;
 	private int tupleStackByteOffset;
@@ -65,6 +68,9 @@ internal sealed partial class VmRuntimeState
 		FrameUpperBound = frameUpperBound;
 		Host = host;
 		procedureSymbols = VmProcedureSymbolCatalog.Load(image, repositoryRoot, VmTraceSession.Configuration.SymbolPathHints);
+		proceduresByCodeOffset = BuildProcedureLookupTables(image, static procedure => procedure.CodeOffset);
+		proceduresByStartOffset = BuildProcedureLookupTables(image, static procedure => procedure.StartOffset);
+		frameUpperBoundsByProcedureStart = BuildFrameUpperBoundCaches(image);
 		nextLowArenaByteOffset = (image.InitialRamBytes.Length + 1) & ~1;
 		nextHighArenaByteOffset = LowSegmentByteLength;
 		tupleStackFloorByteOffset = LowSegmentByteLength + HighSegmentByteLength - TupleStackReserveBytes;
@@ -88,6 +94,9 @@ internal sealed partial class VmRuntimeState
 	public VmFrame CurrentFrame { get; private set; }
 	public int FrameUpperBound { get; private set; }
 	public VirtualScreenHost Host { get; }
+	public bool HasInstructionTracing { get; } = TraceProcedureStartOffset.HasValue
+		|| VmTraceSession.Configuration.InstructionTraceEnabled
+		|| VmTraceSession.Configuration.InstructionTraceTargets.Count > 0;
 	public bool IsHalted { get; private set; }
 	public ushort HaltCode { get; private set; }
 	public int LastReturnWordCount { get; private set; }
@@ -433,11 +442,22 @@ internal sealed partial class VmRuntimeState
 	private ProcedureEntry ResolveNearProcedure(ushort targetOffset, int moduleId)
 	{
 		ModuleImage module = image.Modules[moduleId - 1];
-		ProcedureEntry? procedure = module.Procedures.FirstOrDefault(candidate => candidate.CodeOffset == targetOffset)
-			?? module.Procedures.FirstOrDefault(candidate => candidate.StartOffset == targetOffset);
+		Dictionary<int, ProcedureEntry> proceduresForModuleByCodeOffset = proceduresByCodeOffset[moduleId - 1];
+		if (proceduresForModuleByCodeOffset.TryGetValue(targetOffset, out ProcedureEntry? procedure))
+		{
+			return procedure;
+		}
+
+		Dictionary<int, ProcedureEntry> proceduresForModuleByStartOffset = proceduresByStartOffset[moduleId - 1];
+		if (proceduresForModuleByStartOffset.TryGetValue(targetOffset, out procedure))
+		{
+			return procedure;
+		}
+
 		if (procedure is null)
 		{
 			procedure = ParsePrivateProcedure(module, targetOffset);
+			proceduresForModuleByStartOffset[targetOffset] = procedure;
 		}
 
 		return procedure;
@@ -579,12 +599,66 @@ internal sealed partial class VmRuntimeState
 
 	private int ComputeFrameUpperBound(int moduleId, int procedureStartOffset)
 	{
+		Dictionary<int, int> upperBoundsForModule = frameUpperBoundsByProcedureStart[moduleId - 1];
+		if (upperBoundsForModule.TryGetValue(procedureStartOffset, out int upperBound))
+		{
+			return upperBound;
+		}
+
 		ModuleImage module = image.Modules[moduleId - 1];
-		return module.Procedures
-			.Where(candidate => candidate.StartOffset > procedureStartOffset)
-			.Select(candidate => candidate.StartOffset)
-			.DefaultIfEmpty(module.Length)
-			.Min();
+		int computedUpperBound = module.Length;
+		for (int index = 0; index < module.Procedures.Count; index++)
+		{
+			ProcedureEntry candidate = module.Procedures[index];
+			if (candidate.StartOffset > procedureStartOffset && candidate.StartOffset < computedUpperBound)
+			{
+				computedUpperBound = candidate.StartOffset;
+			}
+		}
+
+		upperBoundsForModule[procedureStartOffset] = computedUpperBound;
+		return computedUpperBound;
+	}
+
+	private static Dictionary<int, ProcedureEntry>[] BuildProcedureLookupTables(CornerstoneImage image, Func<ProcedureEntry, int> keySelector)
+	{
+		Dictionary<int, ProcedureEntry>[] lookupTables = new Dictionary<int, ProcedureEntry>[image.Modules.Count];
+		for (int moduleIndex = 0; moduleIndex < image.Modules.Count; moduleIndex++)
+		{
+			ModuleImage module = image.Modules[moduleIndex];
+			Dictionary<int, ProcedureEntry> lookup = new(module.Procedures.Count);
+			for (int procedureIndex = 0; procedureIndex < module.Procedures.Count; procedureIndex++)
+			{
+				ProcedureEntry procedure = module.Procedures[procedureIndex];
+				lookup[keySelector(procedure)] = procedure;
+			}
+
+			lookupTables[moduleIndex] = lookup;
+		}
+
+		return lookupTables;
+	}
+
+	private static Dictionary<int, int>[] BuildFrameUpperBoundCaches(CornerstoneImage image)
+	{
+		Dictionary<int, int>[] caches = new Dictionary<int, int>[image.Modules.Count];
+		for (int moduleIndex = 0; moduleIndex < image.Modules.Count; moduleIndex++)
+		{
+			ModuleImage module = image.Modules[moduleIndex];
+			Dictionary<int, int> cache = new(module.Procedures.Count);
+			for (int procedureIndex = 0; procedureIndex < module.Procedures.Count; procedureIndex++)
+			{
+				ProcedureEntry procedure = module.Procedures[procedureIndex];
+				int upperBound = procedureIndex + 1 < module.Procedures.Count
+					? module.Procedures[procedureIndex + 1].StartOffset
+					: module.Length;
+				cache[procedure.StartOffset] = upperBound;
+			}
+
+			caches[moduleIndex] = cache;
+		}
+
+		return caches;
 	}
 
 	private void InitializeSystemSlots()

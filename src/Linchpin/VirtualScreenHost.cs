@@ -77,6 +77,12 @@ internal sealed class VirtualScreenHost : IDisposable
 	private ushort scrollRowBottom = Height - 1;
 	private bool renderCacheDirty = true;
 	private string cachedRender = string.Empty;
+	private int consoleWidth;
+	private int consoleHeight;
+	private int lastConsoleCursorRow = -1;
+	private int lastConsoleCursorColumn = -1;
+	private byte? lastConsoleAttribute;
+	private bool? lastCursorVisible;
 
 	private readonly record struct ScreenCell(char Character, byte Attribute);
 
@@ -231,8 +237,6 @@ internal sealed class VirtualScreenHost : IDisposable
 			currentColumn++;
 			columnSlot = (ushort)currentColumn;
 		}
-
-		SyncLiveConsoleCursor();
 	}
 
 	public void SetCursor(int row, int column)
@@ -241,7 +245,10 @@ internal sealed class VirtualScreenHost : IDisposable
 		currentColumn = Math.Clamp(column, 0, Width - 1);
 		rowSlot = (ushort)currentRow;
 		columnSlot = (ushort)currentColumn;
-		SyncLiveConsoleCursor();
+		if (inputCursorVisible)
+		{
+			SyncLiveConsoleCursor();
+		}
 	}
 
 	/// <summary>
@@ -365,7 +372,8 @@ internal sealed class VirtualScreenHost : IDisposable
 		}
 
 		TrySetConsoleColors(originalForegroundColor, originalBackgroundColor);
-		TrySetConsoleCursorPosition(0, Math.Min(Height, GetConsoleHeight() - 1));
+		TryRefreshConsoleMetrics();
+		TrySetConsoleCursorPosition(0, Math.Min(Height, consoleHeight - 1));
 		TrySetCursorVisible(originalCursorVisible);
 		Console.WriteLine();
 	}
@@ -653,6 +661,7 @@ internal sealed class VirtualScreenHost : IDisposable
 		}
 
 		TryEnsureConsoleSize();
+		TryRefreshConsoleMetrics();
 		TryClearConsole();
 		TrySetCursorVisible(false);
 		visibleCursorRow = currentRow;
@@ -667,7 +676,10 @@ internal sealed class VirtualScreenHost : IDisposable
 		currentColumn = Math.Clamp(currentColumn + columnDelta, 0, Width - 1);
 		rowSlot = (ushort)currentRow;
 		columnSlot = (ushort)currentColumn;
-		SyncLiveConsoleCursor();
+		if (inputCursorVisible)
+		{
+			SyncLiveConsoleCursor();
+		}
 	}
 
 	private bool TryReadInteractiveKey()
@@ -753,12 +765,18 @@ internal sealed class VirtualScreenHost : IDisposable
 			return;
 		}
 
-		if (row < 0 || column < 0 || row >= GetConsoleHeight() || column >= GetConsoleWidth())
+		if ((consoleWidth <= 0 || consoleHeight <= 0) && !TryRefreshConsoleMetrics())
 		{
 			return;
 		}
 
-		if (!TrySetConsoleCursorPosition(column, row))
+		if (row < 0 || column < 0 || row >= consoleHeight || column >= consoleWidth)
+		{
+			return;
+		}
+
+		if ((lastConsoleCursorColumn != column || lastConsoleCursorRow != row)
+			&& !TrySetConsoleCursorPosition(column, row))
 		{
 			return;
 		}
@@ -767,6 +785,16 @@ internal sealed class VirtualScreenHost : IDisposable
 		try
 		{
 			Console.Write(cell.Character);
+			if (column + 1 < consoleWidth)
+			{
+				lastConsoleCursorColumn = column + 1;
+				lastConsoleCursorRow = row;
+			}
+			else
+			{
+				lastConsoleCursorColumn = -1;
+				lastConsoleCursorRow = -1;
+			}
 		}
 		catch (IOException)
 		{
@@ -813,9 +841,7 @@ internal sealed class VirtualScreenHost : IDisposable
 			return;
 		}
 
-		int consoleWidth = GetConsoleWidth();
-		int consoleHeight = GetConsoleHeight();
-		if (consoleWidth <= 0 || consoleHeight <= 0)
+		if ((consoleWidth <= 0 || consoleHeight <= 0) && !TryRefreshConsoleMetrics())
 		{
 			return;
 		}
@@ -828,8 +854,6 @@ internal sealed class VirtualScreenHost : IDisposable
 		}
 
 		TrySetCursorVisible(false);
-		int parkingRow = consoleHeight > Height ? Height : Math.Min(Height - 1, consoleHeight - 1);
-		TrySetConsoleCursorPosition(0, parkingRow);
 	}
 
 	private void UpdateVisibleCursorFromCurrent()
@@ -878,11 +902,17 @@ internal sealed class VirtualScreenHost : IDisposable
 		}
 	}
 
-	private static void ApplyConsoleColors(byte attribute)
+	private void ApplyConsoleColors(byte attribute)
 	{
+		if (lastConsoleAttribute == attribute)
+		{
+			return;
+		}
+
 		ConsoleColor foreground = (ConsoleColor)(attribute & 0x0F);
 		ConsoleColor background = (ConsoleColor)(((attribute >> 4) & 0x07) | ((attribute & 0x80) != 0 ? 0x08 : 0x00));
 		TrySetConsoleColors(foreground, background);
+		lastConsoleAttribute = attribute;
 	}
 
 	private static void TrySetConsoleColors(ConsoleColor foreground, ConsoleColor background)
@@ -989,7 +1019,19 @@ internal sealed class VirtualScreenHost : IDisposable
 		}
 	}
 
-	private static bool TrySetConsoleCursorPosition(int column, int row)
+	private bool TryRefreshConsoleMetrics()
+	{
+		consoleWidth = GetConsoleWidth();
+		consoleHeight = GetConsoleHeight();
+		if (consoleWidth <= 0 || consoleHeight <= 0)
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	private bool TrySetConsoleCursorPosition(int column, int row)
 	{
 		if (column < 0 || row < 0)
 		{
@@ -999,6 +1041,8 @@ internal sealed class VirtualScreenHost : IDisposable
 		try
 		{
 			Console.SetCursorPosition(column, row);
+			lastConsoleCursorColumn = column;
+			lastConsoleCursorRow = row;
 			return true;
 		}
 		catch (ArgumentOutOfRangeException)
@@ -1015,9 +1059,14 @@ internal sealed class VirtualScreenHost : IDisposable
 		}
 	}
 
-	private static void TrySetCursorVisible(bool visible)
+	private void TrySetCursorVisible(bool visible)
 	{
 		if (!OperatingSystem.IsWindows())
+		{
+			return;
+		}
+
+		if (lastCursorVisible == visible)
 		{
 			return;
 		}
@@ -1025,6 +1074,7 @@ internal sealed class VirtualScreenHost : IDisposable
 		try
 		{
 			Console.CursorVisible = visible;
+			lastCursorVisible = visible;
 		}
 		catch (IOException)
 		{

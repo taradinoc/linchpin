@@ -14,6 +14,9 @@ internal static class VmExecutor
 	private const ushort FalseSentinel = 0x8001;
 	private const int DefaultInstructionLimit = 5_000_000;
 	private static readonly int InstructionLimit = LoadInstructionLimit();
+	private const int RecentInstructionCapacity = 16;
+
+	private readonly record struct RecentInstructionSnapshot(int ModuleId, int ProcedureIndex, int ProgramCounter, DecodedInstruction Instruction);
 
 	/// <summary>
 	/// Executes a Cornerstone VM program to completion (or until a stop condition).
@@ -33,10 +36,15 @@ internal static class VmExecutor
 	{
 		VmRuntimeState state = VmRuntimeState.Create(image, inputText, displayMode, executionOptions);
 		bool enforceInstructionLimit = displayMode != VmRunDisplayMode.LiveConsole;
+		VmTraceConfiguration traceConfiguration = VmTraceSession.Configuration;
+		bool hasConditionalStop = traceConfiguration.HasConditionalStop;
+		DecodedInstruction?[][] instructionCache = CreateInstructionCache(image);
 		try
 		{
 			int instructionCount = 0;
-			Queue<string> recentInstructions = new();
+			RecentInstructionSnapshot[] recentInstructions = new RecentInstructionSnapshot[RecentInstructionCapacity];
+			int recentInstructionCount = 0;
+			int recentInstructionNextIndex = 0;
 
 			while (!state.IsHalted)
 			{
@@ -61,13 +69,13 @@ internal static class VmExecutor
 							$"instruction limit {InstructionLimit:N0}");
 					}
 
-					throw new LinchpinException($"Execution limit exceeded before HALT at {DescribeExecutionPosition(state)} after {InstructionLimit:N0} instructions. Recent instructions: {string.Join(" | ", recentInstructions)}");
+					throw new LinchpinException($"Execution limit exceeded before HALT at {DescribeExecutionPosition(state)} after {InstructionLimit:N0} instructions. Recent instructions: {FormatRecentInstructions(recentInstructions, recentInstructionCount, recentInstructionNextIndex)}");
 				}
 
 				ModuleImage module = image.Modules[state.CurrentModuleId - 1];
 				int upperBound = state.FrameUpperBound;
-				DecodedInstruction instruction = BytecodeDecoder.DecodeInstructionAt(image, grammar, module, state.ProgramCounter, upperBound);
-				AppendRecentInstruction(recentInstructions, state, instruction);
+				DecodedInstruction instruction = DecodeInstructionAtCached(image, grammar, module, state.ProgramCounter, upperBound, instructionCache[state.CurrentModuleId - 1]);
+				AppendRecentInstruction(recentInstructions, ref recentInstructionCount, ref recentInstructionNextIndex, state, instruction);
 
 				try
 				{
@@ -76,10 +84,10 @@ internal static class VmExecutor
 				catch (LinchpinException exception)
 				{
 					throw new LinchpinException(
-						$"Execution failed in module {state.CurrentModuleId} at 0x{state.ProgramCounter:X4} on {instruction.Mnemonic}: {exception.Message}");
+						$"Execution failed in module {state.CurrentModuleId} at 0x{state.ProgramCounter:X4} on {instruction.Mnemonic}: {exception.Message}. Recent instructions: {FormatRecentInstructions(recentInstructions, recentInstructionCount, recentInstructionNextIndex)}");
 				}
 				instructionCount++;
-				if (TryCreateConditionalStopResult(state, instructionCount, out VmExecutionResult? conditionalStopResult))
+				if (hasConditionalStop && TryCreateConditionalStopResult(state, traceConfiguration, instructionCount, out VmExecutionResult? conditionalStopResult))
 				{
 					return conditionalStopResult!;
 				}
@@ -99,6 +107,17 @@ internal static class VmExecutor
 		}
 	}
 
+	private static DecodedInstruction?[][] CreateInstructionCache(CornerstoneImage image)
+	{
+		DecodedInstruction?[][] cache = new DecodedInstruction?[image.Modules.Count][];
+		for (int index = 0; index < image.Modules.Count; index++)
+		{
+			cache[index] = new DecodedInstruction?[image.Modules[index].Length];
+		}
+
+		return cache;
+	}
+
 	private static int LoadInstructionLimit()
 	{
 		string? rawValue = Environment.GetEnvironmentVariable("LINCHPIN_EXECUTION_LIMIT");
@@ -112,24 +131,95 @@ internal static class VmExecutor
 			: DefaultInstructionLimit;
 	}
 
-	private static void AppendRecentInstruction(Queue<string> recentInstructions, VmRuntimeState state, DecodedInstruction instruction)
+	private static DecodedInstruction DecodeInstructionAtCached(
+		CornerstoneImage image,
+		InstructionGrammar grammar,
+		ModuleImage module,
+		int moduleRelativeOffset,
+		int upperBound,
+		DecodedInstruction?[] cache)
 	{
-		string operands = instruction.Operands.Count == 0
-			? string.Empty
-			: " " + string.Join(", ", instruction.Operands.Select(operand => operand.DisplayText));
-
-		recentInstructions.Enqueue($"m{state.CurrentModuleId}:p{state.CurrentFrame.ProcedureIndex}:0x{state.ProgramCounter:X4}:{instruction.Mnemonic}{operands}");
-		while (recentInstructions.Count > 16)
+		DecodedInstruction? cachedInstruction = cache[moduleRelativeOffset];
+		if (cachedInstruction is not null)
 		{
-			recentInstructions.Dequeue();
+			return cachedInstruction;
 		}
+
+		DecodedInstruction decodedInstruction = BytecodeDecoder.DecodeInstructionAt(image, grammar, module, moduleRelativeOffset, upperBound);
+		cache[moduleRelativeOffset] = decodedInstruction;
+		return decodedInstruction;
+	}
+
+	private static void AppendRecentInstruction(
+		RecentInstructionSnapshot[] recentInstructions,
+		ref int recentInstructionCount,
+		ref int recentInstructionNextIndex,
+		VmRuntimeState state,
+		DecodedInstruction instruction)
+	{
+		recentInstructions[recentInstructionNextIndex] = new RecentInstructionSnapshot(
+			state.CurrentModuleId,
+			state.CurrentFrame.ProcedureIndex,
+			state.ProgramCounter,
+			instruction);
+		recentInstructionNextIndex = (recentInstructionNextIndex + 1) % recentInstructions.Length;
+		if (recentInstructionCount < recentInstructions.Length)
+		{
+			recentInstructionCount++;
+		}
+	}
+
+	private static string FormatRecentInstructions(RecentInstructionSnapshot[] recentInstructions, int recentInstructionCount, int recentInstructionNextIndex)
+	{
+		if (recentInstructionCount == 0)
+		{
+			return "<none>";
+		}
+
+		StringBuilder builder = new();
+		for (int index = 0; index < recentInstructionCount; index++)
+		{
+			if (index > 0)
+			{
+				builder.Append(" | ");
+			}
+
+			int snapshotIndex = (recentInstructionNextIndex - recentInstructionCount + index + recentInstructions.Length) % recentInstructions.Length;
+			RecentInstructionSnapshot snapshot = recentInstructions[snapshotIndex];
+			builder
+				.Append('m')
+				.Append(snapshot.ModuleId)
+				.Append(":p")
+				.Append(snapshot.ProcedureIndex)
+				.Append(":0x")
+				.Append(snapshot.ProgramCounter.ToString("X4", CultureInfo.InvariantCulture))
+				.Append(':')
+				.Append(snapshot.Instruction.Mnemonic);
+
+			if (snapshot.Instruction.Operands.Count == 0)
+			{
+				continue;
+			}
+
+			builder.Append(' ');
+			for (int operandIndex = 0; operandIndex < snapshot.Instruction.Operands.Count; operandIndex++)
+			{
+				if (operandIndex > 0)
+				{
+					builder.Append(", ");
+				}
+
+				builder.Append(snapshot.Instruction.Operands[operandIndex].DisplayText);
+			}
+		}
+
+		return builder.ToString();
 	}
 
 	private static string DescribeExecutionPosition(VmRuntimeState state) => state.BuildExecutionSummary();
 
-	private static bool TryCreateConditionalStopResult(VmRuntimeState state, int instructionCount, out VmExecutionResult? result)
+	private static bool TryCreateConditionalStopResult(VmRuntimeState state, VmTraceConfiguration configuration, int instructionCount, out VmExecutionResult? result)
 	{
-		VmTraceConfiguration configuration = VmTraceSession.Configuration;
 		if (configuration.StopOnOutputPattern is string outputPattern && state.Host.ContainsRenderedText(outputPattern))
 		{
 			string screenDump = state.Host.Render();
@@ -170,7 +260,10 @@ internal static class VmExecutor
 	private static void ExecuteInstruction(VmRuntimeState state, DecodedInstruction instruction, int instructionCount)
 	{
 		int nextProgramCounter = state.ProgramCounter + instruction.ByteLength;
-		state.TraceInstructionExecution(instruction, instructionCount);
+		if (state.HasInstructionTracing)
+		{
+			state.TraceInstructionExecution(instruction, instructionCount);
+		}
 
 		switch (instruction.Mnemonic)
 		{
